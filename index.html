@@ -1,0 +1,1754 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VOID GATE — 深宇宙への入口</title>
+<link href="./fonts/fonts.css" rel="stylesheet">
+<style>
+:root{
+  --bg:#030014;
+  --cyan:#00f0ff;
+  --magenta:#ff2ec4;
+  --violet:#7b5cff;
+  --text:#dfe9ff;
+  --dim:#8a96b8;
+  --panel:rgba(10,16,40,.55);
+  --line:rgba(0,240,255,.25);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+a,button,input,textarea{cursor:none}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Noto Sans JP',sans-serif;
+  overflow-x:hidden;
+  cursor:none;
+}
+::selection{background:var(--cyan);color:#000}
+
+/* ===== WebGL背景 ===== */
+#space{position:fixed;inset:0;z-index:0;display:block}
+
+/* ===== カスタムカーソル ===== */
+#cursor{
+  position:fixed;width:8px;height:8px;border-radius:50%;
+  background:var(--cyan);z-index:9999;pointer-events:none;
+  transform:translate(-50%,-50%);
+  box-shadow:0 0 12px var(--cyan),0 0 30px rgba(0,240,255,.5);
+  transition:width .2s,height .2s,background .2s;
+}
+#cursor-ring{
+  position:fixed;width:36px;height:36px;border-radius:50%;
+  border:1px solid rgba(0,240,255,.6);z-index:9998;pointer-events:none;
+  transform:translate(-50%,-50%);
+  transition:width .25s,height .25s,border-color .25s;
+}
+body.cursor-hover #cursor{width:14px;height:14px;background:var(--magenta);box-shadow:0 0 16px var(--magenta)}
+body.cursor-hover #cursor-ring{width:56px;height:56px;border-color:var(--magenta)}
+@media (hover:none){#cursor,#cursor-ring{display:none}body{cursor:auto}}
+
+/* ===== HUDオーバーレイ ===== */
+.scanlines{
+  position:fixed;inset:0;z-index:3;pointer-events:none;
+  background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,240,255,.012) 3px 4px);
+}
+.hud-corner{position:fixed;width:64px;height:64px;z-index:4;pointer-events:none;opacity:.7}
+.hud-corner::before,.hud-corner::after{content:"";position:absolute;background:var(--cyan)}
+.hud-corner::before{width:100%;height:1px}
+.hud-corner::after{width:1px;height:100%}
+.hud-tl{top:14px;left:14px}
+.hud-tr{top:14px;right:14px;transform:scaleX(-1)}
+.hud-bl{bottom:14px;left:14px;transform:scaleY(-1)}
+.hud-br{bottom:14px;right:14px;transform:scale(-1)}
+#hud-status{
+  position:fixed;left:24px;bottom:28px;z-index:5;
+  font-family:'Orbitron',monospace;font-size:10px;letter-spacing:.2em;
+  color:var(--cyan);pointer-events:none;text-shadow:0 0 8px rgba(0,240,255,.6);
+}
+#progress-track{
+  position:fixed;right:26px;top:50%;transform:translateY(-50%);
+  width:2px;height:180px;background:rgba(255,255,255,.12);z-index:5;
+}
+#progress-bar{width:100%;height:0%;background:linear-gradient(var(--cyan),var(--magenta));box-shadow:0 0 8px var(--cyan)}
+
+/* ===== ナビ ===== */
+header{
+  position:fixed;top:0;left:0;right:0;z-index:10;
+  display:flex;justify-content:space-between;align-items:center;
+  padding:22px 48px;
+  background:linear-gradient(rgba(3,0,20,.85),transparent);
+}
+.logo{
+  font-family:'Orbitron',sans-serif;font-weight:800;font-size:18px;
+  letter-spacing:.35em;color:#fff;text-shadow:0 0 14px var(--cyan);
+}
+.logo span{color:var(--cyan)}
+nav{display:flex;gap:34px}
+nav a{
+  font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:.25em;
+  color:var(--dim);text-decoration:none;position:relative;padding:4px 0;
+  transition:color .25s;
+}
+nav a::after{
+  content:"";position:absolute;left:0;bottom:0;width:0;height:1px;
+  background:var(--cyan);box-shadow:0 0 8px var(--cyan);transition:width .3s;
+}
+nav a:hover{color:#fff}
+nav a:hover::after{width:100%}
+
+/* ===== セクション共通 ===== */
+main{position:relative;z-index:2}
+section{
+  min-height:100vh;display:flex;flex-direction:column;
+  justify-content:center;padding:120px 9vw;position:relative;
+}
+.reveal{opacity:0;transform:translateY(48px);transition:opacity 1s ease,transform 1s ease}
+.reveal.visible{opacity:1;transform:none}
+.sec-tag{
+  font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:.4em;
+  color:var(--cyan);margin-bottom:18px;display:flex;align-items:center;gap:12px;
+}
+.sec-tag::before{content:"";width:36px;height:1px;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+h2{
+  font-family:'Orbitron','Noto Sans JP',sans-serif;font-size:clamp(28px,4.2vw,52px);
+  font-weight:600;line-height:1.25;margin-bottom:22px;color:#fff;
+}
+.lead{max-width:560px;color:var(--dim);font-weight:300;line-height:2;font-size:15px}
+
+/* ===== HERO ===== */
+#hero{align-items:flex-start;justify-content:center}
+#hero h1{
+  font-family:'Orbitron',sans-serif;font-weight:800;
+  font-size:clamp(44px,9vw,120px);letter-spacing:.08em;line-height:1.05;
+  color:#fff;
+  text-shadow:0 0 30px rgba(0,240,255,.45),0 0 80px rgba(123,92,255,.35);
+}
+#hero h1 .accent{
+  background:linear-gradient(90deg,var(--cyan),var(--violet),var(--magenta));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 0 18px rgba(255,46,196,.35));
+}
+.glitch{position:relative;display:inline-block}
+.glitch::before,.glitch::after{
+  content:attr(data-text);position:absolute;inset:0;opacity:0;
+}
+.glitch.play::before{opacity:.8;color:var(--cyan);animation:gl1 .35s steps(2) both}
+.glitch.play::after{opacity:.8;color:var(--magenta);animation:gl2 .35s steps(2) both}
+@keyframes gl1{0%{transform:translate(-6px,2px)}50%{transform:translate(4px,-3px)}100%{transform:none;opacity:0}}
+@keyframes gl2{0%{transform:translate(5px,-2px)}50%{transform:translate(-4px,3px)}100%{transform:none;opacity:0}}
+#typed{
+  margin-top:28px;font-family:'Orbitron',monospace;font-size:13px;
+  letter-spacing:.3em;color:var(--cyan);min-height:20px;
+}
+#typed::after{content:"▌";animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.hero-actions{margin-top:48px;display:flex;gap:24px;flex-wrap:wrap}
+
+/* ===== ボタン ===== */
+.btn{
+  position:relative;display:inline-block;padding:16px 42px;
+  font-family:'Orbitron',sans-serif;font-size:12px;letter-spacing:.3em;
+  color:var(--cyan);text-decoration:none;border:1px solid var(--line);
+  background:rgba(0,240,255,.04);overflow:hidden;
+  clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px);
+  transition:color .3s,box-shadow .3s,border-color .3s;will-change:transform;
+}
+.btn::before{
+  content:"";position:absolute;inset:0;
+  background:linear-gradient(120deg,transparent 30%,rgba(0,240,255,.25) 50%,transparent 70%);
+  transform:translateX(-110%);transition:transform .55s ease;
+}
+.btn:hover{color:#fff;border-color:var(--cyan);box-shadow:0 0 24px rgba(0,240,255,.35),inset 0 0 24px rgba(0,240,255,.08)}
+.btn:hover::before{transform:translateX(110%)}
+.btn.magenta{color:var(--magenta);border-color:rgba(255,46,196,.3);background:rgba(255,46,196,.04)}
+.btn.magenta:hover{border-color:var(--magenta);box-shadow:0 0 24px rgba(255,46,196,.35)}
+
+.scroll-cue{
+  position:absolute;bottom:42px;left:50%;transform:translateX(-50%);
+  font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:.4em;color:var(--dim);
+  display:flex;flex-direction:column;align-items:center;gap:10px;
+}
+.scroll-cue::after{
+  content:"";width:1px;height:46px;
+  background:linear-gradient(var(--cyan),transparent);
+  animation:drop 1.8s ease infinite;
+}
+@keyframes drop{0%{transform:scaleY(0);transform-origin:top}60%{transform:scaleY(1)}100%{transform:scaleY(0);transform-origin:bottom}}
+
+/* ===== カード ===== */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:26px;margin-top:46px;perspective:1200px}
+.card{
+  position:relative;padding:34px 28px;background:var(--panel);
+  border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(12px);
+  clip-path:polygon(20px 0,100% 0,100% calc(100% - 20px),calc(100% - 20px) 100%,0 100%,0 20px);
+  transition:border-color .3s,box-shadow .3s;
+  transform-style:preserve-3d;will-change:transform;
+}
+.card:hover{border-color:var(--line);box-shadow:0 0 36px rgba(0,240,255,.15)}
+.card .num{
+  font-family:'Orbitron',sans-serif;font-size:11px;color:var(--magenta);
+  letter-spacing:.3em;margin-bottom:16px;
+}
+.card h3{font-family:'Orbitron','Noto Sans JP',sans-serif;font-size:17px;color:#fff;margin-bottom:14px;letter-spacing:.06em}
+.card p{font-size:13px;color:var(--dim);line-height:1.9;font-weight:300}
+.card .glowline{position:absolute;top:0;left:20px;right:0;height:1px;background:linear-gradient(90deg,var(--cyan),transparent);opacity:.5}
+
+/* ===== 惑星ギャラリー ===== */
+#gallery .planet-ui{display:flex;gap:18px;margin-top:40px;flex-wrap:wrap}
+.planet-chip{
+  padding:12px 26px;font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:.25em;
+  border:1px solid rgba(255,255,255,.14);color:var(--dim);background:rgba(8,12,32,.5);
+  clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
+  transition:all .3s;user-select:none;
+}
+.planet-chip:hover{color:#fff;border-color:var(--cyan)}
+.planet-chip.active{color:#000;background:var(--cyan);border-color:var(--cyan);box-shadow:0 0 22px rgba(0,240,255,.5)}
+#planet-data{
+  margin-top:34px;max-width:480px;padding:26px;background:var(--panel);
+  border-left:2px solid var(--cyan);backdrop-filter:blur(10px);
+  font-size:13px;line-height:2;color:var(--dim);
+}
+#planet-data b{color:#fff;font-family:'Orbitron',sans-serif;letter-spacing:.1em;display:block;margin-bottom:8px}
+
+/* ===== CONTACT ===== */
+#contact .terminal{
+  margin-top:42px;max-width:640px;background:rgba(2,4,16,.8);
+  border:1px solid var(--line);backdrop-filter:blur(14px);
+  font-family:'Orbitron',monospace;
+  clip-path:polygon(18px 0,100% 0,100% calc(100% - 18px),calc(100% - 18px) 100%,0 100%,0 18px);
+}
+.term-head{
+  display:flex;gap:8px;padding:14px 18px;border-bottom:1px solid rgba(0,240,255,.15);
+  font-size:10px;letter-spacing:.3em;color:var(--cyan);align-items:center;
+}
+.term-head i{width:8px;height:8px;border-radius:50%;background:var(--magenta);box-shadow:0 0 8px var(--magenta)}
+.term-body{padding:24px 22px;display:flex;flex-direction:column;gap:18px}
+.term-body label{font-size:10px;letter-spacing:.3em;color:var(--dim)}
+.term-body input,.term-body textarea{
+  width:100%;background:rgba(0,240,255,.04);border:1px solid rgba(255,255,255,.1);
+  color:#fff;padding:13px 16px;font-family:'Noto Sans JP',sans-serif;font-size:14px;
+  outline:none;transition:border-color .3s,box-shadow .3s;resize:vertical;
+}
+.term-body input:focus,.term-body textarea:focus{border-color:var(--cyan);box-shadow:0 0 16px rgba(0,240,255,.2)}
+.term-body button{
+  align-self:flex-start;cursor:none;border:1px solid var(--magenta);
+  background:rgba(255,46,196,.06);color:var(--magenta);
+  padding:14px 40px;font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:.3em;
+  transition:all .3s;
+}
+.term-body button:hover{background:var(--magenta);color:#000;box-shadow:0 0 26px rgba(255,46,196,.5)}
+#send-msg{font-size:11px;letter-spacing:.2em;color:var(--cyan);min-height:16px}
+
+footer{
+  position:relative;z-index:2;text-align:center;padding:46px 0 64px;
+  font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:.35em;color:var(--dim);
+}
+
+/* クリック時フラッシュ */
+#flash{position:fixed;inset:0;z-index:6;pointer-events:none;background:radial-gradient(circle at var(--fx,50%) var(--fy,50%),rgba(0,240,255,.18),transparent 40%);opacity:0;transition:opacity .5s}
+#flash.on{opacity:1;transition:opacity .05s}
+
+/* ===== ミニゲーム ===== */
+#game-layer{position:fixed;inset:0;z-index:50;background:#020010;display:none}
+#game-layer.on{display:block}
+#game-canvas,#wave-canvas{position:absolute;inset:0;width:100%;height:100%}
+#game-layer.ghit::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(circle,transparent 35%,rgba(255,46,196,.4))}
+#cockpit-vign{position:absolute;inset:0;z-index:1;pointer-events:none;display:none;
+  background:radial-gradient(ellipse 125% 95% at 50% 40%,transparent 55%,rgba(2,6,20,.5) 76%,rgba(1,2,10,.92) 100%)}
+#game-layer.cockpit #cockpit-vign{display:block}
+.gview-pick{display:flex;gap:14px;justify-content:center;margin-bottom:28px;flex-wrap:wrap}
+#game-layer.glock::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(circle,transparent 35%,rgba(0,240,255,.35))}
+/* 飛行中: リングは消し、ドットは小さく薄く残す(カーソル位置の認知用) */
+body.no-cursor #cursor-ring{display:none}
+body.no-cursor #cursor{
+  width:5px;height:5px;
+  background:rgba(0,240,255,.45);
+  box-shadow:0 0 6px rgba(0,240,255,.3);
+}
+@keyframes gshake{
+  0%,100%{transform:translate(0,0)}
+  10%{transform:translate(-9px,5px)}
+  20%{transform:translate(8px,-6px)}
+  30%{transform:translate(-7px,-4px)}
+  40%{transform:translate(6px,5px)}
+  50%{transform:translate(-5px,3px)}
+  60%{transform:translate(4px,-4px)}
+  70%{transform:translate(-3px,2px)}
+  80%{transform:translate(2px,2px)}
+  90%{transform:translate(-1px,-1px)}
+}
+#game-layer.gshake{animation:gshake .45s linear}
+#game-exit{
+  position:absolute;top:20px;right:24px;z-index:9;
+  font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:.25em;
+  color:var(--dim);background:rgba(8,12,32,.6);border:1px solid rgba(255,255,255,.15);
+  padding:10px 22px;transition:all .3s;
+}
+#game-exit:hover{color:#fff;border-color:var(--magenta);box-shadow:0 0 18px rgba(255,46,196,.4)}
+#game-hud{
+  position:absolute;top:20px;left:24px;z-index:4;
+  font-family:'Orbitron',sans-serif;color:var(--cyan);
+  display:flex;flex-direction:column;gap:8px;min-width:240px;max-width:340px;
+}
+.ghud-row{display:flex;justify-content:space-between;gap:18px;font-size:11px;letter-spacing:.18em;
+  background:rgba(4,8,24,.55);border:1px solid rgba(0,240,255,.18);padding:8px 14px;backdrop-filter:blur(6px)}
+.ghud-row .glabel{color:var(--dim)}
+.ghud-row .gval{color:#fff;text-shadow:0 0 10px var(--cyan)}
+.ghud-row .gval.shield{color:var(--cyan)}
+.ghud-btn{
+  align-self:flex-start;font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:.25em;
+  color:var(--dim);background:rgba(8,12,32,.6);border:1px solid rgba(255,255,255,.15);
+  padding:8px 16px;transition:all .3s;cursor:none;
+}
+.ghud-btn:hover{color:#fff;border-color:var(--cyan)}
+#fire-btn{
+  position:absolute;right:20px;bottom:96px;z-index:7;width:92px;height:92px;border-radius:50%;
+  display:none;align-items:center;justify-content:center;
+  font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:.22em;color:var(--cyan);
+  background:rgba(0,240,255,.07);border:1px solid rgba(0,240,255,.5);
+  box-shadow:0 0 20px rgba(0,240,255,.25),inset 0 0 16px rgba(0,240,255,.12);
+  -webkit-tap-highlight-color:transparent;touch-action:none;user-select:none;-webkit-user-select:none;
+}
+#fire-btn:active{background:rgba(0,240,255,.25);box-shadow:0 0 32px rgba(0,240,255,.5),inset 0 0 20px rgba(0,240,255,.3)}
+#game-layer.touch-fire #fire-btn{display:flex}
+#rotate-guide{
+  position:absolute;inset:0;z-index:8;display:none;flex-direction:column;align-items:center;justify-content:center;gap:28px;
+  background:rgba(2,0,16,.94);text-align:center;
+}
+#game-layer.need-rotate #rotate-guide{display:flex}
+.rg-phone{width:34px;height:58px;border:2px solid var(--cyan);border-radius:7px;
+  box-shadow:0 0 18px rgba(0,240,255,.35);animation:rgTurn 1.8s ease-in-out infinite}
+@keyframes rgTurn{0%,15%{transform:rotate(0)}55%,100%{transform:rotate(90deg)}}
+#rotate-guide p{font-family:'Orbitron','Noto Sans JP',sans-serif;font-size:14px;letter-spacing:.3em;
+  color:var(--cyan);text-shadow:0 0 14px rgba(0,240,255,.5);line-height:2.4}
+#rotate-guide p span{font-size:11px;color:var(--dim);letter-spacing:.18em}
+#game-overlay{position:absolute;inset:0;z-index:6;display:flex;align-items:center;justify-content:center;pointer-events:none}
+#game-overlay .gscreen{
+  pointer-events:auto;text-align:center;padding:54px 64px;max-width:660px;
+  background:rgba(4,6,22,.78);border:1px solid var(--line);backdrop-filter:blur(16px);
+  clip-path:polygon(24px 0,100% 0,100% calc(100% - 24px),calc(100% - 24px) 100%,0 100%,0 24px);
+  animation:gsIn .3s ease both;
+}
+@keyframes gsIn{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+.gtitle{font-family:'Orbitron',sans-serif;font-size:32px;font-weight:800;letter-spacing:.16em;color:#fff;text-shadow:0 0 28px rgba(0,240,255,.6);margin-bottom:20px}
+.gdesc{font-size:13px;color:var(--dim);line-height:2.1;margin-bottom:30px}
+.gdesc b{color:var(--text)}
+.gscore{font-family:'Orbitron',sans-serif;font-size:20px;color:var(--cyan);letter-spacing:.15em;margin-bottom:30px;text-shadow:0 0 16px rgba(0,240,255,.5)}
+.gscore small{color:var(--dim);font-size:12px}
+.gbtns{display:flex;gap:20px;justify-content:center}
+.gfrags{font-family:'Orbitron','Noto Sans JP',sans-serif;font-size:12px;letter-spacing:.25em;
+  color:var(--magenta);text-shadow:0 0 12px rgba(255,46,196,.6);
+  background:rgba(4,8,24,.55);border:1px solid rgba(255,46,196,.25);padding:8px 14px;min-height:32px}
+
+@media(max-width:720px){
+  #game-overlay .gscreen{padding:38px 26px;margin:0 16px}
+  .gtitle{font-size:24px}
+  header{padding:18px 22px}
+  nav{display:none}
+  section{padding:100px 7vw}
+  #progress-track{display:none}
+  /* ゲームHUD: EXITと重ならない幅に収め、縦の占有も圧縮 */
+  #game-exit{top:14px;right:12px;padding:9px 13px;font-size:10px;letter-spacing:.18em}
+  #game-hud{top:14px;left:12px;right:104px;min-width:0;max-width:none;gap:6px}
+  .ghud-row{font-size:9px;padding:6px 10px;gap:10px;letter-spacing:.14em}
+  .ghud-btn{font-size:9px;padding:7px 11px;letter-spacing:.18em}
+  .gbtns{gap:12px}
+  .gfrags{font-size:10px;letter-spacing:.15em}
+}
+@media (prefers-reduced-motion:reduce){
+  .reveal{transition:none}
+  .scroll-cue::after{animation:none}
+}
+</style>
+</head>
+<body>
+
+<canvas id="space"></canvas>
+<div class="scanlines"></div>
+<div class="hud-corner hud-tl"></div><div class="hud-corner hud-tr"></div>
+<div class="hud-corner hud-bl"></div><div class="hud-corner hud-br"></div>
+<div id="hud-status">SECTOR 01 / 05 — SIGNAL LOCKED</div>
+<div id="progress-track"><div id="progress-bar"></div></div>
+<div id="flash"></div>
+<div id="cursor"></div><div id="cursor-ring"></div>
+
+<header>
+  <div class="logo">VOID<span>GATE</span></div>
+  <nav>
+    <a href="#hero">HOME</a>
+    <a href="#mission">MISSION</a>
+    <a href="#tech">TECHNOLOGY</a>
+    <a href="#gallery">PLANETS</a>
+    <a href="#contact">CONTACT</a>
+  </nav>
+</header>
+
+<main>
+  <section id="hero">
+    <div class="reveal visible">
+      <h1>
+        <span class="glitch" data-text="BEYOND">BEYOND</span><br>
+        <span class="accent glitch" data-text="THE VOID">THE VOID</span>
+      </h1>
+      <p id="typed"></p>
+      <div class="hero-actions">
+        <a class="btn magnetic" id="btn-explore" href="#">EXPLORE&nbsp;//&nbsp;探査開始</a>
+        <a class="btn magenta magnetic" id="btn-contact" href="#">CONTACT&nbsp;//&nbsp;交信</a>
+      </div>
+    </div>
+    <div class="scroll-cue">SCROLL</div>
+  </section>
+
+  <section id="mission">
+    <div class="reveal">
+      <div class="sec-tag">SECTOR 02 — MISSION</div>
+      <h2>深宇宙は、<br>もう遠くない。</h2>
+      <p class="lead">
+        VOID GATEは、人類の知覚を星間スケールへ拡張するための実験的インターフェースです。
+        スクロールはワープ航行に、カーソルは観測装置に変わる。
+        あなたの操作のひとつひとつが、この宇宙の物理に干渉します。
+        画面のどこかをクリックして、重力波を発生させてみてください。
+      </p>
+    </div>
+  </section>
+
+  <section id="tech">
+    <div class="reveal">
+      <div class="sec-tag">SECTOR 03 — TECHNOLOGY</div>
+      <h2>推進システム</h2>
+      <div class="grid">
+        <div class="card tilt">
+          <div class="glowline"></div>
+          <div class="num">SYS.01</div>
+          <h3>WARP DRIVE</h3>
+          <p>スクロール量を推進力へ変換するカメラ航行システム。ページの縦移動が、そのまま星域間のワープとして描画されます。</p>
+        </div>
+        <div class="card tilt">
+          <div class="glowline"></div>
+          <div class="num">SYS.02</div>
+          <h3>GRAVITY SENSOR</h3>
+          <p>カーソルの位置を重力源として検知し、視差とともに星々がゆるやかに応答。クリックで重力波パルスを放出します。</p>
+        </div>
+        <div class="card tilt">
+          <div class="glowline"></div>
+          <div class="num">SYS.03</div>
+          <h3>NEBULA CORE</h3>
+          <p>数千の発光パーティクルで構成された星雲炉心。加算合成によるリアルタイム描画で、深宇宙の色彩を生成します。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="gallery">
+    <div class="reveal">
+      <div class="sec-tag">SECTOR 04 — PLANETS</div>
+      <h2>観測対象を選択</h2>
+      <p class="lead">チップを選ぶと、背景の惑星がリアルタイムに変化します。</p>
+      <div class="planet-ui">
+        <div class="planet-chip active" data-planet="aqua">AQUA-7</div>
+        <div class="planet-chip" data-planet="ember">EMBER-3</div>
+        <div class="planet-chip" data-planet="ion">ION-X</div>
+      </div>
+      <div id="planet-data">
+        <b>AQUA-7 // 氷海惑星</b>
+        全球が液体メタンの海に覆われた惑星。地表温度 -182℃。極軌道上に複素リングを持ち、シアンの大気光が観測される。
+      </div>
+    </div>
+  </section>
+
+  <section id="contact">
+    <div class="reveal">
+      <div class="sec-tag">SECTOR 05 — CONTACT</div>
+      <h2>交信チャンネル</h2>
+      <div class="terminal">
+        <div class="term-head"><i></i>UPLINK TERMINAL v3.2 — ENCRYPTED</div>
+        <div class="term-body">
+          <div>
+            <label>CALLSIGN // 名前</label>
+            <input type="text" id="f-name" placeholder="例: ISHIHARA">
+          </div>
+          <div>
+            <label>MESSAGE // 通信文</label>
+            <textarea id="f-msg" rows="4" placeholder="深宇宙へ送信するメッセージ..."></textarea>
+          </div>
+          <button id="send">TRANSMIT ▸</button>
+          <p id="send-msg"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>VOID GATE © 2026 — RENDERED WITH THREE.JS / ALL SIGNALS RESERVED</footer>
+
+<div id="game-layer">
+  <canvas id="game-canvas"></canvas>
+  <canvas id="wave-canvas"></canvas>
+  <div id="cockpit-vign"></div>
+  <div id="game-hud"></div>
+  <div id="game-overlay"></div>
+  <button id="game-exit">EXIT ✕</button>
+  <button id="fire-btn">FIRE</button>
+  <div id="rotate-guide">
+    <div class="rg-phone"></div>
+    <p>ROTATE DEVICE<br><span>横画面でプレイしてください</span></p>
+  </div>
+</div>
+
+<script type="importmap">
+{"imports":{
+  "three":"./libs/three.module.js",
+  "three/addons/":"./libs/addons/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
+import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
+import {AfterimagePass} from 'three/addons/postprocessing/AfterimagePass.js';
+
+const canvas = document.getElementById('space');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:false});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x030014, 0.0028);
+const camera = new THREE.PerspectiveCamera(62, innerWidth/innerHeight, 0.1, 1200);
+camera.position.set(0, 0, 80);
+
+/* ---------- 丸い発光スプライトを動的生成 ---------- */
+function glowTexture(inner='rgba(255,255,255,1)', outer='rgba(255,255,255,0)'){
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32,32,0,32,32,32);
+  grad.addColorStop(0, inner); grad.addColorStop(.35,'rgba(255,255,255,.45)');
+  grad.addColorStop(1, outer);
+  g.fillStyle = grad; g.fillRect(0,0,64,64);
+  return new THREE.CanvasTexture(c);
+}
+const starTex = glowTexture();
+
+/* ---------- 星layers(3層パララックス) ---------- */
+function makeStars(count, spread, size, color, depth){
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count*3);
+  for(let i=0;i<count;i++){
+    pos[i*3]   = (Math.random()-.5)*spread;
+    pos[i*3+1] = (Math.random()-.5)*spread*.7;
+    pos[i*3+2] = -Math.random()*900 + 100;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const mat = new THREE.PointsMaterial({
+    size, map:starTex, color, transparent:true, opacity:.9,
+    depthWrite:false, blending:THREE.AdditiveBlending, sizeAttenuation:true
+  });
+  const pts = new THREE.Points(geo, mat);
+  pts.userData.depth = depth;
+  scene.add(pts);
+  return pts;
+}
+const stars = [
+  makeStars(3200, 700, 1.6, 0xffffff, .25),
+  makeStars(1600, 600, 2.4, 0x9fd8ff, .5),
+  makeStars(700,  500, 3.4, 0xd9b8ff, 1)
+];
+
+/* ---------- 星雲(大型ソフトパーティクル) ---------- */
+const nebGeo = new THREE.BufferGeometry();
+const NEB = 260;
+const nebPos = new Float32Array(NEB*3);
+const nebCol = new Float32Array(NEB*3);
+const palette = [new THREE.Color(0x0a2a66), new THREE.Color(0x3a1466), new THREE.Color(0x06365c), new THREE.Color(0x551a4f)];
+for(let i=0;i<NEB;i++){
+  const r = 90 + Math.random()*260;
+  const a = Math.random()*Math.PI*2;
+  nebPos[i*3]   = Math.cos(a)*r*1.4;
+  nebPos[i*3+1] = (Math.random()-.5)*160;
+  nebPos[i*3+2] = -Math.random()*850;
+  const c = palette[Math.floor(Math.random()*palette.length)];
+  nebCol[i*3]=c.r; nebCol[i*3+1]=c.g; nebCol[i*3+2]=c.b;
+}
+nebGeo.setAttribute('position', new THREE.BufferAttribute(nebPos,3));
+nebGeo.setAttribute('color', new THREE.BufferAttribute(nebCol,3));
+const nebula = new THREE.Points(nebGeo, new THREE.PointsMaterial({
+  size:120, map:starTex, vertexColors:true, transparent:true, opacity:.16,
+  depthWrite:false, blending:THREE.AdditiveBlending
+}));
+scene.add(nebula);
+
+/* ---------- 惑星 + 大気 + リング ---------- */
+const PLANETS = {
+  aqua:  {surf:0x0e4d6e, glow:0x00f0ff, ring:0x7feaff,
+    label:'AQUA-7 // 氷海惑星',
+    desc:'全球が液体メタンの海に覆われた惑星。地表温度 -182℃。極軌道上に複素リングを持ち、シアンの大気光が観測される。'},
+  ember: {surf:0x6e2a0e, glow:0xff7a2e, ring:0xffb37f,
+    label:'EMBER-3 // 溶岩惑星',
+    desc:'地殻の70%が活動的なマグマ帯。恒星に近い軌道を高速公転しており、夜側でも地表が赤熱して輝く。'},
+  ion:   {surf:0x3a1466, glow:0xff2ec4, ring:0xc77fff,
+    label:'ION-X // 電離惑星',
+    desc:'強磁場により大気全体がプラズマ化した異形の惑星。マゼンタのオーロラが全球を覆い、電波嵐が絶えない。'}
+};
+const planetGroup = new THREE.Group();
+planetGroup.position.set(46, 6, -190);
+scene.add(planetGroup);
+
+const surfMat = new THREE.MeshStandardMaterial({color:PLANETS.aqua.surf, roughness:.7, metalness:.25});
+const planet = new THREE.Mesh(new THREE.SphereGeometry(22, 64, 64), surfMat);
+planetGroup.add(planet);
+
+const atmoMat = new THREE.ShaderMaterial({
+  uniforms:{ glowColor:{value:new THREE.Color(PLANETS.aqua.glow)} },
+  vertexShader:`varying vec3 vN; varying vec3 vV;
+    void main(){ vN = normalize(normalMatrix*normal);
+      vec4 mv = modelViewMatrix*vec4(position,1.0); vV = normalize(-mv.xyz);
+      gl_Position = projectionMatrix*mv; }`,
+  fragmentShader:`uniform vec3 glowColor; varying vec3 vN; varying vec3 vV;
+    void main(){ float f = pow(1.0-abs(dot(vN,vV)), 2.6);
+      gl_FragColor = vec4(glowColor, f*0.9); }`,
+  transparent:true, blending:THREE.AdditiveBlending, side:THREE.BackSide, depthWrite:false
+});
+const atmo = new THREE.Mesh(new THREE.SphereGeometry(25.5, 64, 64), atmoMat);
+planetGroup.add(atmo);
+
+const ringMat = new THREE.MeshBasicMaterial({color:PLANETS.aqua.ring, transparent:true, opacity:.32, side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false});
+const ring = new THREE.Mesh(new THREE.RingGeometry(30, 44, 96), ringMat);
+ring.rotation.x = Math.PI/2.4; ring.rotation.y = .25;
+planetGroup.add(ring);
+
+scene.add(new THREE.AmbientLight(0x223355, 1.6));
+const sun = new THREE.PointLight(0x88bbff, 2800, 0, 1.8);
+sun.position.set(-120, 60, -60);
+scene.add(sun);
+
+/* ---------- 重力波パルス(クリック) ---------- */
+const pulses = [];
+function spawnPulse(x, y){
+  const ndc = new THREE.Vector3(x/innerWidth*2-1, -(y/innerHeight)*2+1, .5);
+  ndc.unproject(camera);
+  const dir = ndc.sub(camera.position).normalize();
+  const pos = camera.position.clone().add(dir.multiplyScalar(60));
+  const geo = new THREE.RingGeometry(.1, .5, 64);
+  const mat = new THREE.MeshBasicMaterial({color:0x00f0ff, transparent:true, opacity:.9, side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false});
+  const m = new THREE.Mesh(geo, mat);
+  m.position.copy(pos);
+  m.lookAt(camera.position);
+  scene.add(m);
+  pulses.push({mesh:m, t:0});
+  // バーストパーティクル
+  const bGeo = new THREE.BufferGeometry();
+  const N = 60, bp = new Float32Array(N*3), vel = [];
+  for(let i=0;i<N;i++){ bp[i*3]=pos.x; bp[i*3+1]=pos.y; bp[i*3+2]=pos.z;
+    const v = new THREE.Vector3((Math.random()-.5),(Math.random()-.5),(Math.random()-.5)).normalize().multiplyScalar(.3+Math.random()*.5);
+    vel.push(v); }
+  bGeo.setAttribute('position', new THREE.BufferAttribute(bp,3));
+  const bMat = new THREE.PointsMaterial({size:1.6, map:starTex, color:0x9ffcff, transparent:true, opacity:1, depthWrite:false, blending:THREE.AdditiveBlending});
+  const burst = new THREE.Points(bGeo, bMat);
+  scene.add(burst);
+  pulses.push({mesh:burst, t:0, vel});
+}
+
+/* ---------- 入力状態 ---------- */
+const mouse = {x:0, y:0, tx:0, ty:0};
+addEventListener('mousemove', e=>{
+  mouse.tx = (e.clientX/innerWidth - .5)*2;
+  mouse.ty = (e.clientY/innerHeight - .5)*2;
+  cursor.style.left = e.clientX+'px'; cursor.style.top = e.clientY+'px';
+  curX = e.clientX; curY = e.clientY;
+});
+addEventListener('mousedown', e=>{
+  if(activeGame) return;
+  spawnPulse(e.clientX, e.clientY);
+  const f = document.getElementById('flash');
+  f.style.setProperty('--fx', e.clientX+'px');
+  f.style.setProperty('--fy', e.clientY+'px');
+  f.classList.add('on');
+  setTimeout(()=>f.classList.remove('on'), 60);
+});
+
+let scrollT = 0;
+addEventListener('scroll', ()=>{
+  const max = document.documentElement.scrollHeight - innerHeight;
+  scrollT = max > 0 ? scrollY/max : 0;
+  document.getElementById('progress-bar').style.height = (scrollT*100)+'%';
+  const sector = Math.min(5, Math.floor(scrollT*5)+1);
+  document.getElementById('hud-status').textContent =
+    `SECTOR 0${sector} / 05 — ${['SIGNAL LOCKED','WARP ENGAGED','SYSTEMS NOMINAL','ORBIT ACQUIRED','UPLINK READY'][sector-1]}`;
+  checkReveals();
+}, {passive:true});
+
+/* ---------- メインループ ---------- */
+const clock = new THREE.Clock();
+function loop(){
+  requestAnimationFrame(loop);
+  const t = clock.getElapsedTime();
+
+  // パララックス + ワープ航行
+  mouse.x += (mouse.tx - mouse.x)*.05;
+  mouse.y += (mouse.ty - mouse.y)*.05;
+  const targetZ = 80 - scrollT*260;
+  camera.position.z += (targetZ - camera.position.z)*.06;
+  camera.position.x += (mouse.x*7 - camera.position.x)*.05;
+  camera.position.y += (-mouse.y*5 - camera.position.y)*.05;
+  camera.lookAt(0, 0, camera.position.z - 100);
+
+  // 星のきらめき + 各層パララックス
+  stars.forEach((s,i)=>{
+    s.material.opacity = .65 + Math.sin(t*1.8 + i*2.1)*.25;
+    s.position.x = mouse.x * -6 * s.userData.depth;
+    s.position.y = mouse.y *  4 * s.userData.depth;
+  });
+  nebula.rotation.z = t*.008;
+
+  // 惑星
+  planet.rotation.y = t*.12;
+  ring.rotation.z = t*.05;
+  planetGroup.position.y = 6 + Math.sin(t*.6)*1.5;
+
+  // パルス更新
+  for(let i=pulses.length-1;i>=0;i--){
+    const p = pulses[i]; p.t += .016;
+    if(p.vel){
+      const arr = p.mesh.geometry.attributes.position.array;
+      for(let j=0;j<p.vel.length;j++){
+        arr[j*3]+=p.vel[j].x; arr[j*3+1]+=p.vel[j].y; arr[j*3+2]+=p.vel[j].z;
+      }
+      p.mesh.geometry.attributes.position.needsUpdate = true;
+      p.mesh.material.opacity = 1 - p.t*1.4;
+    }else{
+      p.mesh.scale.setScalar(1 + p.t*38);
+      p.mesh.material.opacity = .9 - p.t*1.2;
+    }
+    if(p.t > .8){
+      scene.remove(p.mesh);
+      p.mesh.geometry.dispose(); p.mesh.material.dispose();
+      pulses.splice(i,1);
+    }
+  }
+
+  checkReveals();
+
+  // カーソルリング追従
+  ringX += (curX - ringX)*.18; ringY += (curY - ringY)*.18;
+  cursorRing.style.left = ringX+'px'; cursorRing.style.top = ringY+'px';
+
+  if(!activeGame) renderer.render(scene, camera);
+}
+
+/* ---------- カスタムカーソル ---------- */
+const cursor = document.getElementById('cursor');
+const cursorRing = document.getElementById('cursor-ring');
+let curX = innerWidth/2, curY = innerHeight/2, ringX = curX, ringY = curY;
+const HOVERABLES = 'a,button,input,textarea,.planet-chip,.card';
+document.addEventListener('mouseover', e=>{ if(e.target.closest(HOVERABLES)) document.body.classList.add('cursor-hover'); });
+document.addEventListener('mouseout', e=>{ if(e.target.closest(HOVERABLES)) document.body.classList.remove('cursor-hover'); });
+
+/* ---------- マグネティックボタン ---------- */
+document.querySelectorAll('.magnetic').forEach(btn=>{
+  btn.addEventListener('mousemove', e=>{
+    const r = btn.getBoundingClientRect();
+    const dx = e.clientX - (r.left+r.width/2);
+    const dy = e.clientY - (r.top+r.height/2);
+    btn.style.transform = `translate(${dx*.18}px, ${dy*.3}px)`;
+  });
+  btn.addEventListener('mouseleave', ()=>btn.style.transform = '');
+});
+
+/* ---------- カード3Dチルト ---------- */
+document.querySelectorAll('.tilt').forEach(card=>{
+  card.addEventListener('mousemove', e=>{
+    const r = card.getBoundingClientRect();
+    const px = (e.clientX - r.left)/r.width - .5;
+    const py = (e.clientY - r.top)/r.height - .5;
+    card.style.transform = `rotateY(${px*14}deg) rotateX(${-py*12}deg) translateZ(8px)`;
+  });
+  card.addEventListener('mouseleave', ()=>card.style.transform = '');
+});
+
+/* ---------- スクロールリビール ---------- */
+const reveals = [...document.querySelectorAll('.reveal:not(.visible)')];
+function checkReveals(){
+  for(let i=reveals.length-1;i>=0;i--){
+    const r = reveals[i].getBoundingClientRect();
+    if(r.top < innerHeight*.82 && r.bottom > 0){
+      reveals[i].classList.add('visible');
+      reveals.splice(i,1);
+    }
+  }
+}
+checkReveals();
+
+/* ---------- タイピング演出 ---------- */
+const phrases = ['INITIALIZING WARP DRIVE...', '深宇宙航行システム、起動。', 'COORDINATES LOCKED: SECTOR 7G', 'ようこそ、VOID GATEへ。'];
+let pi = 0, ci = 0, deleting = false;
+(function type(){
+  const el = document.getElementById('typed');
+  const cur = phrases[pi];
+  el.textContent = cur.slice(0, ci);
+  if(!deleting && ci < cur.length){ ci++; setTimeout(type, 65); }
+  else if(!deleting){ deleting = true; setTimeout(type, 2000); }
+  else if(ci > 0){ ci--; setTimeout(type, 25); }
+  else { deleting = false; pi = (pi+1)%phrases.length; setTimeout(type, 400); }
+})();
+
+/* ---------- グリッチ(周期再生) ---------- */
+setInterval(()=>{
+  document.querySelectorAll('.glitch').forEach(g=>{
+    g.classList.add('play');
+    setTimeout(()=>g.classList.remove('play'), 380);
+  });
+}, 4200);
+
+/* ---------- 惑星セレクタ ---------- */
+document.querySelectorAll('.planet-chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    document.querySelectorAll('.planet-chip').forEach(c=>c.classList.remove('active'));
+    chip.classList.add('active');
+    const p = PLANETS[chip.dataset.planet];
+    // 色をトゥイーン
+    const fromS = surfMat.color.clone(), toS = new THREE.Color(p.surf);
+    const fromG = atmoMat.uniforms.glowColor.value.clone(), toG = new THREE.Color(p.glow);
+    const fromR = ringMat.color.clone(), toR = new THREE.Color(p.ring);
+    const start = performance.now();
+    (function tween(){
+      const k = Math.min(1, (performance.now()-start)/900);
+      const e = 1-Math.pow(1-k, 3);
+      surfMat.color.lerpColors(fromS, toS, e);
+      atmoMat.uniforms.glowColor.value.lerpColors(fromG, toG, e);
+      ringMat.color.lerpColors(fromR, toR, e);
+      if(k < 1) requestAnimationFrame(tween);
+    })();
+    document.getElementById('planet-data').innerHTML = `<b>${p.label}</b>${p.desc}`;
+  });
+});
+
+/* ---------- 交信ターミナル ---------- */
+document.getElementById('send').addEventListener('click', ()=>{
+  const name = document.getElementById('f-name').value.trim() || 'UNKNOWN';
+  const out = document.getElementById('send-msg');
+  const seq = [`> ENCRYPTING SIGNAL FROM ${name.toUpperCase()}...`, '> ROUTING VIA RELAY STATION K-9...', `> TRANSMISSION COMPLETE. 応答まで推定 4.2 光年。`];
+  out.textContent = '';
+  let i = 0;
+  (function next(){
+    if(i < seq.length){ out.textContent = seq[i]; i++; setTimeout(next, 900); }
+  })();
+});
+
+/* ================= ミニゲーム基盤 ================= */
+const gameLayer = document.getElementById('game-layer');
+const gameHud = document.getElementById('game-hud');
+const gameOverlay = document.getElementById('game-overlay');
+const IS_TOUCH = matchMedia('(hover:none)').matches || 'ontouchstart' in window;
+const gameCv = document.getElementById('game-canvas');
+const waveCv = document.getElementById('wave-canvas');
+let activeGame = null;
+let gpaused = false;   // SP縦持ち中はゲームを一時停止(横画面ガイド表示)
+
+// ミニゲームはSPでは横画面でプレイする
+const portraitMQ = matchMedia('(orientation: portrait)');
+function updateRotateGuide(){
+  const need = !!activeGame && IS_TOUCH && portraitMQ.matches;
+  gameLayer.classList.toggle('need-rotate', need);
+  gpaused = need;
+}
+portraitMQ.addEventListener('change', updateRotateGuide);
+
+function openLayer(which){
+  activeGame = which;
+  gameLayer.classList.add('on');
+  gameCv.style.display = which === 'asteroid' ? 'block' : 'none';
+  waveCv.style.display = which === 'signal' ? 'block' : 'none';
+  document.body.style.overflow = 'hidden';
+  if(IS_TOUCH && document.documentElement.requestFullscreen){
+    // 対応端末(Android等)はフルスクリーン+横画面に固定。不可ならガイド表示にフォールバック
+    document.documentElement.requestFullscreen()
+      .then(()=>{ if(screen.orientation && screen.orientation.lock) return screen.orientation.lock('landscape'); })
+      .catch(()=>{});
+  }
+  updateRotateGuide();
+}
+function closeLayer(){
+  if(activeGame === 'asteroid') AsteroidRun.stop();
+  if(activeGame === 'signal') SignalGame.stop();
+  activeGame = null;
+  gameLayer.classList.remove('on');
+  gameLayer.classList.remove('cockpit');
+  gameLayer.classList.remove('need-rotate');
+  gpaused = false;
+  gameOverlay.innerHTML = '';
+  gameHud.innerHTML = '';
+  document.body.style.overflow = '';
+  if(screen.orientation && screen.orientation.unlock){ try{ screen.orientation.unlock(); }catch(e){} }
+  if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+}
+// リザルト直後はボタンを無効化し、連打クリックの貫通(即リトライ/即終了)を防ぐ
+function lockButtons(){
+  const btns = gameOverlay.querySelector('.gbtns');
+  if(!btns) return;
+  btns.style.pointerEvents = 'none';
+  btns.style.opacity = '.45';
+  setTimeout(()=>{ btns.style.pointerEvents = ''; btns.style.opacity = ''; }, 600);
+}
+
+/* ---------- GAME 1: ASTEROID RUN(探査開始) ---------- */
+const AsteroidRun = (()=>{
+  let R, S, C, ship, dust;
+  let cockpit, stick, lever, ret, retMat, dcv, dctx, dtex;
+  let composer, afterimage;
+  let view = 'cockpit', shake = 0;
+  let lockMode = true;   // true=自動ロックオン / false=通常モード
+  let lastFire = 0, noCoreUntil = 0;
+  const fx = [];   // 機関砲エフェクト(トレーサー/爆発/閃光)
+  const asts = [], cores = [];
+  let raf = 0, playing = false, last = 0, frame = 0, st = null;
+  const mt = {x:0, y:0};
+  const sm = {x:0, y:0, roll:0, pitch:0, fov:72};   // 慣性付きカメラ状態
+  const FX = 46, FY = 34;   // 飛行フィールドの半径(上下も機敏に動ける広さ)
+  const SPD_MAX = 480;      // 速度上限(表示は×4 = 1920 km/s)
+  const LN = 280;           // スピードラインの本数
+
+  gameHud.addEventListener('click', e=>{
+    if(e.target.closest('#g-view')) toggleView();
+    if(e.target.closest('#g-lock')) toggleLock();
+  });
+
+  function build(){
+    R = new THREE.WebGLRenderer({canvas:gameCv, antialias:true});
+    R.setPixelRatio(Math.min(devicePixelRatio, 2));
+    S = new THREE.Scene();
+    S.background = new THREE.Color(0x020010);
+    S.fog = new THREE.FogExp2(0x020010, .0035);
+    C = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, .1, 1500);
+    C.position.set(0, 4, 17);
+
+    const hull = new THREE.MeshStandardMaterial({color:0xbfd8ff, metalness:.85, roughness:.35, emissive:0x16335f});
+    ship = new THREE.Group();
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(1.3, 5.2, 4), hull);
+    nose.rotation.x = -Math.PI/2;
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(7.5, .3, 2.4), hull);
+    wing.position.set(0, -.4, 1.2);
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(.3, 2.4, 1.8), hull);
+    fin.position.set(0, .9, 1.6);
+    const eng = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x00f0ff, blending:THREE.AdditiveBlending, depthWrite:false}));
+    eng.scale.set(4, 4, 1); eng.position.set(0, 0, 3.2);
+    ship.add(nose, wing, fin, eng);
+    S.add(ship);
+
+    S.add(new THREE.AmbientLight(0x445577, 2));
+    const key = new THREE.DirectionalLight(0xaaccff, 2.4);
+    key.position.set(40, 60, 30);
+    S.add(key);
+
+    const rockGeo = new THREE.DodecahedronGeometry(1, 1);
+    const rockMat = new THREE.MeshStandardMaterial({color:0x77809c, roughness:.9, metalness:.15, flatShading:true});
+    for(let i=0;i<46;i++){
+      const m = new THREE.Mesh(rockGeo, rockMat);
+      const r = 2 + Math.random()*6;
+      m.scale.setScalar(r);
+      m.userData = {r, sx:(Math.random()-.5)*.8, sy:(Math.random()-.5)*.8};
+      S.add(m); asts.push(m);
+    }
+    const coreGeo = new THREE.OctahedronGeometry(1.6);
+    for(let i=0;i<6;i++){
+      const m = new THREE.Mesh(coreGeo, new THREE.MeshBasicMaterial({color:0x00f0ff, transparent:true, opacity:.95, blending:THREE.AdditiveBlending}));
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x00f0ff, blending:THREE.AdditiveBlending, depthWrite:false}));
+      halo.scale.set(9, 9, 1);
+      m.add(halo);
+      S.add(m); cores.push(m);
+    }
+    // スピードライン(速度に応じて伸びる流線)
+    const dGeo = new THREE.BufferGeometry();
+    const dp = new Float32Array(LN*2*3);
+    for(let i=0;i<LN;i++){
+      const x = (Math.random()-.5)*240, y = (Math.random()-.5)*150, z = -Math.random()*1000;
+      dp[i*6] = x; dp[i*6+1] = y; dp[i*6+2] = z;
+      dp[i*6+3] = x; dp[i*6+4] = y; dp[i*6+5] = z+2;
+    }
+    dGeo.setAttribute('position', new THREE.BufferAttribute(dp, 3));
+    dust = new THREE.LineSegments(dGeo, new THREE.LineBasicMaterial({color:0x9fd4ff, transparent:true, opacity:.45, blending:THREE.AdditiveBlending, depthWrite:false}));
+    S.add(dust);
+
+    buildCockpit();
+
+    // ポストプロセス: 残像によるモーションブラー
+    composer = new EffectComposer(R);
+    composer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    composer.addPass(new RenderPass(S, C));
+    afterimage = new AfterimagePass(.8);
+    composer.addPass(afterimage);
+  }
+
+  /* --- コックピット(操縦席) --- */
+  function buildCockpit(){
+    S.add(C);
+    cockpit = new THREE.Group();
+    C.add(cockpit);
+
+    const dark = new THREE.MeshStandardMaterial({color:0x0b1126, metalness:.7, roughness:.45});
+    const metal = new THREE.MeshStandardMaterial({color:0x232c48, metalness:.85, roughness:.3});
+    const cyanGlow = new THREE.MeshBasicMaterial({color:0x00f0ff});
+    const magGlow = new THREE.MeshBasicMaterial({color:0xff2ec4});
+
+    // 曲面ダッシュボード + 発光トリム(操縦者を包み込むラウンドコンソール)
+    const arc = 1.6, thetaS = Math.PI - arc/2;
+    const dashMat = new THREE.MeshStandardMaterial({color:0x0b1126, metalness:.7, roughness:.45, side:THREE.DoubleSide});
+    const trimMat = new THREE.MeshBasicMaterial({color:0x00f0ff, side:THREE.DoubleSide});
+    const dash = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 2.3, .95, 64, 1, true, thetaS, arc), dashMat);
+    dash.position.set(0, -1.42, 0);
+    const trim = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 2.0, .022, 64, 1, true, thetaS, arc), trimMat);
+    trim.position.set(0, -.94, 0);
+    cockpit.add(dash, trim);
+
+    // (キャノピーリブは視界を遮るため廃止 — 視界は計器とビネットのみで構成)
+
+    // 操縦桿(入力に連動して傾く)
+    stick = new THREE.Group();
+    stick.position.set(.85, -1.08, -1.12);
+    const sbase = new THREE.Mesh(new THREE.SphereGeometry(.17, 32, 24, 0, Math.PI*2, 0, Math.PI/2), dark);
+    sbase.scale.y = .55;
+    const srod = new THREE.Mesh(new THREE.CylinderGeometry(.035, .05, .52, 24), metal);
+    srod.position.y = .28;
+    const sgrip = new THREE.Mesh(new THREE.CapsuleGeometry(.07, .13, 8, 24), dark);
+    sgrip.position.y = .58;
+    const sring = new THREE.Mesh(new THREE.TorusGeometry(.078, .013, 12, 36), cyanGlow);
+    sring.position.y = .5; sring.rotation.x = Math.PI/2;
+    const sbtn = new THREE.Mesh(new THREE.SphereGeometry(.024, 16, 16), magGlow);
+    sbtn.position.set(0, .66, .045);
+    stick.add(sbase, srod, sgrip, sring, sbtn);
+    cockpit.add(stick);
+
+    // スロットルレバー(速度に連動)
+    lever = new THREE.Group();
+    lever.position.set(-1.02, -1.26, -1.04);
+    lever.rotation.z = -.34;   // 外側へ傾けて計器に被らないように
+    const lrod = new THREE.Mesh(new THREE.CylinderGeometry(.026, .034, .4, 18), metal);
+    lrod.position.y = .2;
+    const lknob = new THREE.Mesh(new THREE.CapsuleGeometry(.05, .11, 8, 20), dark);
+    lknob.position.y = .42; lknob.rotation.z = Math.PI/2;
+    const lring = new THREE.Mesh(new THREE.TorusGeometry(.054, .011, 10, 28), cyanGlow);
+    lring.position.y = .42; lring.rotation.y = Math.PI/2;
+    lever.add(lrod, lknob, lring);
+    cockpit.add(lever);
+
+    // HUDレティクル(四隅のコーナーブラケット + 中央の十字 / ごく薄い飾り、ロック時に増光)
+    retMat = new THREE.MeshBasicMaterial({color:0x00f0ff, transparent:true, opacity:.12, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide});
+    ret = new THREE.Group();
+    const rbar = (w, h, x, y)=>{
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), retMat);
+      m.position.set(x, y, 0);
+      return m;
+    };
+    const rs = .17, ra = .07, rt = .006;   // 枠の半径 / 角の腕の長さ / 線の太さ
+    [[-1,1],[1,1],[-1,-1],[1,-1]].forEach(([sx,sy])=>{
+      ret.add(rbar(ra, rt, sx*(rs-ra/2), sy*rs));
+      ret.add(rbar(rt, ra, sx*rs, sy*(rs-ra/2)));
+    });
+    ret.add(rbar(.09, rt, 0, 0));
+    ret.add(rbar(rt, .09, 0, 0));
+    ret.position.set(0, -.65, -3);
+    cockpit.add(ret);
+
+    // 計器ディスプレイ(3面独立パネル / 左右を内側に向けたラップアラウンド配置)
+    dcv = []; dctx = []; dtex = [];
+    const panelGeo = new THREE.PlaneGeometry(.74, .56);
+    const panelPose = [
+      {p:[-.76, -.73, -1.33], r:[-.18,  .42, 0]},   // 左: 内向き
+      {p:[  0,  -.78, -1.48], r:[-.24,   0,  0]},   // 中央: やや奥・下
+      {p:[ .76, -.73, -1.33], r:[-.18, -.42, 0]}    // 右: 内向き
+    ];
+    for(let i=0;i<3;i++){
+      const cv = document.createElement('canvas');
+      cv.width = 340; cv.height = 256;
+      dcv.push(cv);
+      dctx.push(cv.getContext('2d'));
+      const tx = new THREE.CanvasTexture(cv);
+      tx.colorSpace = THREE.SRGBColorSpace;
+      dtex.push(tx);
+      const p = new THREE.Mesh(panelGeo, new THREE.MeshBasicMaterial({map:tx, transparent:true}));
+      p.position.set(...panelPose[i].p);
+      p.rotation.set(...panelPose[i].r);
+      cockpit.add(p);
+    }
+
+    // コックピット内照明
+    const cl = new THREE.PointLight(0x00f0ff, 6, 5, 2);
+    cl.position.set(0, -.4, -1);
+    cockpit.add(cl);
+  }
+
+  /* --- 計器の描画(3面独立) --- */
+  function panelBase(c, label){
+    c.clearRect(0, 0, 340, 256);
+    c.beginPath();
+    c.roundRect(6, 10, 328, 236, 18);
+    c.fillStyle = 'rgba(2,8,22,.97)'; c.fill();
+    c.strokeStyle = 'rgba(0,240,255,.5)'; c.lineWidth = 2; c.stroke();
+    c.fillStyle = '#8a96b8'; c.font = '18px Orbitron, monospace'; c.textAlign = 'left';
+    c.fillText(label, 24, 44);
+  }
+  function drawDash(){
+    // 左: 速度計(アークメーター。レッドゾーン入りで最高速が直感的に分かる)
+    let c = dctx[0];
+    panelBase(c, 'VELOCITY');
+    const gx = 186, gy = 150, gr = 78;   // レバーと重ならないようやや右寄せ
+    const ga = Math.PI*.75, gSweep = Math.PI*1.5;   // 135°→405°の270°スイープ
+    const gRatio = Math.min(1, st.speed/SPD_MAX);
+    const isMax = st.speed >= SPD_MAX;
+    c.lineCap = 'round';
+    // 背景トラック + レッドゾーン(上位12%)
+    c.lineWidth = 10;
+    c.strokeStyle = 'rgba(255,255,255,.08)';
+    c.beginPath(); c.arc(gx, gy, gr, ga, ga+gSweep); c.stroke();
+    c.strokeStyle = 'rgba(255,46,196,.35)';
+    c.beginPath(); c.arc(gx, gy, gr, ga+gSweep*.88, ga+gSweep); c.stroke();
+    // 進捗アーク
+    c.strokeStyle = isMax ? '#ff2ec4' : '#00f0ff';
+    c.shadowColor = isMax ? '#ff2ec4' : '#00f0ff'; c.shadowBlur = 10;
+    c.beginPath(); c.arc(gx, gy, gr, ga, ga+gSweep*Math.max(.001, gRatio)); c.stroke();
+    c.shadowBlur = 0;
+    // 目盛り
+    c.lineWidth = 2; c.strokeStyle = 'rgba(138,150,184,.6)';
+    for(let i=0;i<=8;i++){
+      const a = ga + gSweep*i/8;
+      c.beginPath();
+      c.moveTo(gx+Math.cos(a)*(gr-12), gy+Math.sin(a)*(gr-12));
+      c.lineTo(gx+Math.cos(a)*(gr-20), gy+Math.sin(a)*(gr-20));
+      c.stroke();
+    }
+    // 針 + ハブ
+    const na = ga + gSweep*gRatio;
+    c.lineWidth = 3; c.strokeStyle = '#fff';
+    c.shadowColor = isMax ? '#ff2ec4' : '#00f0ff'; c.shadowBlur = 8;
+    c.beginPath(); c.moveTo(gx, gy); c.lineTo(gx+Math.cos(na)*(gr-24), gy+Math.sin(na)*(gr-24)); c.stroke();
+    c.shadowBlur = 0;
+    c.fillStyle = '#0b1126'; c.strokeStyle = '#00f0ff'; c.lineWidth = 2;
+    c.beginPath(); c.arc(gx, gy, 7, 0, Math.PI*2); c.fill(); c.stroke();
+    // デジタル値(上限到達でMAX) — ゲージ内側に表示してレバーと干渉しない位置に
+    c.textAlign = 'center';
+    if(isMax){
+      c.fillStyle = '#ff2ec4'; c.font = '30px Orbitron, monospace';
+      c.shadowColor = '#ff2ec4'; c.shadowBlur = 12;
+      c.fillText('MAX', gx, gy+38);
+      c.shadowBlur = 0;
+    }else{
+      c.fillStyle = '#00f0ff'; c.font = '30px Orbitron, monospace';
+      c.fillText(String(Math.floor(st.speed*4)), gx, gy+38);
+    }
+    c.fillStyle = '#8a96b8'; c.font = '13px Orbitron, monospace';
+    c.fillText('km/s', gx, gy+58);
+    c.textAlign = 'left';
+    dtex[0].needsUpdate = true;
+
+    // 中央: 近接レーダー(実際の小惑星/コアの位置)
+    c = dctx[1];
+    panelBase(c, 'PROXIMITY RADAR');
+    const cx = 170, cy = 144, r = 84;
+    c.save();
+    c.beginPath(); c.arc(cx, cy, r, 0, Math.PI*2); c.clip();
+    c.strokeStyle = 'rgba(0,240,255,.3)'; c.lineWidth = 1;
+    [r, r*.66, r*.33].forEach(rr=>{ c.beginPath(); c.arc(cx, cy, rr, 0, Math.PI*2); c.stroke(); });
+    c.beginPath(); c.moveTo(cx-r, cy); c.lineTo(cx+r, cy); c.moveTo(cx, cy-r); c.lineTo(cx, cy+r); c.stroke();
+    const sw = performance.now()/600;
+    c.strokeStyle = 'rgba(0,240,255,.7)'; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx+Math.cos(sw)*r, cy+Math.sin(sw)*r); c.stroke();
+    for(const m of asts){
+      const dx = m.position.x - ship.position.x, dz = m.position.z - ship.position.z;
+      c.fillStyle = dz > -170 ? '#ff2ec4' : 'rgba(190,220,255,.75)';
+      c.fillRect(cx+(dx/130)*r-2.5, cy+(dz/520)*r-2.5, 5, 5);
+    }
+    for(const m of cores){
+      const dx = m.position.x - ship.position.x, dz = m.position.z - ship.position.z;
+      c.fillStyle = '#7dffec';
+      c.beginPath(); c.arc(cx+(dx/130)*r, cy+(dz/520)*r, 4, 0, Math.PI*2); c.fill();
+    }
+    c.restore();
+    c.fillStyle = '#fff';
+    c.beginPath(); c.moveTo(cx, cy-7); c.lineTo(cx-5, cy+5); c.lineTo(cx+5, cy+5); c.closePath(); c.fill();
+    dtex[1].needsUpdate = true;
+
+    // 右: システム状態
+    c = dctx[2];
+    panelBase(c, 'SYSTEMS');
+    c.fillStyle = '#8a96b8'; c.font = '16px Orbitron, monospace';
+    c.fillText('SHIELD', 32, 92);
+    c.fillStyle = st.shields > 1 ? '#00f0ff' : '#ff2ec4';
+    c.font = '28px Orbitron, monospace';
+    c.fillText('◆ '.repeat(Math.max(0, st.shields)) + '◇ '.repeat(3-Math.max(0, st.shields)), 32, 128);
+    c.fillStyle = '#8a96b8'; c.font = '16px Orbitron, monospace';
+    c.fillText('ENERGY CORE', 32, 180);
+    const noCore = performance.now() < noCoreUntil;
+    c.fillStyle = noCore ? '#ff2ec4' : '#7dffec';
+    c.font = '28px Orbitron, monospace';
+    c.fillText(String(st.cores).padStart(2, '0') + (noCore ? ' NO CORE' : ''), 32, 216);
+    dtex[2].needsUpdate = true;
+  }
+
+  /* --- 機関砲 --- */
+  function findTarget(narrow){
+    // 正面の照準コーン内で最も手前の小惑星(narrow=自動ロックオン用の狭いコーン、通常の約半分)
+    let best = null, bestZ = -1e9;
+    for(const m of asts){
+      const dz = m.position.z - ship.position.z;
+      if(dz > -12 || dz < -480) continue;
+      const dx = m.position.x - ship.position.x, dy = m.position.y - ship.position.y;
+      const margin = narrow ? 2.5 - dz*.022 : 6 - dz*.05;
+      if(Math.hypot(dx, dy) < m.userData.r + margin){
+        if(m.position.z > bestZ){ bestZ = m.position.z; best = m; }
+      }
+    }
+    return best;
+  }
+  function tracer(from, to){
+    const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
+    const mat = new THREE.LineBasicMaterial({color:0x00f0ff, transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false});
+    const l = new THREE.Line(geo, mat);
+    S.add(l);
+    fx.push({kind:'tracer', obj:l, t:0, life:.14});
+  }
+  function boom(pos, r){
+    const N = 36;
+    const bg = new THREE.BufferGeometry();
+    const pp = new Float32Array(N*3);
+    const vel = [];
+    for(let i=0;i<N;i++){
+      pp[i*3] = pos.x; pp[i*3+1] = pos.y; pp[i*3+2] = pos.z;
+      vel.push(new THREE.Vector3(Math.random()-.5, Math.random()-.5, Math.random()-.5).normalize().multiplyScalar(14+Math.random()*22));
+    }
+    bg.setAttribute('position', new THREE.BufferAttribute(pp, 3));
+    const pts = new THREE.Points(bg, new THREE.PointsMaterial({size:2.4, map:starTex, color:0xffc77f, transparent:true, opacity:1, depthWrite:false, blending:THREE.AdditiveBlending}));
+    S.add(pts);
+    fx.push({kind:'boom', obj:pts, vel, t:0, life:.6});
+    const fl = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0xffe9c4, transparent:true, opacity:.95, blending:THREE.AdditiveBlending, depthWrite:false}));
+    fl.position.copy(pos);
+    fl.scale.setScalar(r*2.5);
+    S.add(fl);
+    fx.push({kind:'flash', obj:fl, t:0, life:.3, s0:r*2.5});
+  }
+  function clearFx(){
+    for(const f of fx){
+      S.remove(f.obj);
+      if(f.obj.geometry) f.obj.geometry.dispose();
+      f.obj.material.dispose();
+    }
+    fx.length = 0;
+  }
+  function fire(){
+    if(!playing || gpaused) return;
+    const now = performance.now();
+    if(now - lastFire < 160) return;
+    lastFire = now;
+    if(st.cores <= 0){
+      noCoreUntil = now + 600;   // NO CORE警告
+      hud();
+      return;
+    }
+    const tgt = findTarget(lockMode);   // 自動ロックオン中はレティクルと同じ狭いコーンで撃つ
+    const aim = tgt ? tgt.position.clone()
+                    : new THREE.Vector3(ship.position.x, ship.position.y, ship.position.z - 320);
+    tracer(ship.position.clone().add(new THREE.Vector3(-3.2, -1.2, 1)), aim);
+    tracer(ship.position.clone().add(new THREE.Vector3( 3.2, -1.2, 1)), aim);
+    if(tgt){
+      st.cores--;
+      boom(tgt.position.clone(), tgt.userData.r);
+      respawn(tgt, true);
+      shake = Math.min(1, shake + .25);   // 反動
+      hud();
+    }
+  }
+
+  function applyView(){
+    if(cockpit) cockpit.visible = view === 'cockpit';
+    gameLayer.classList.toggle('cockpit', activeGame === 'asteroid' && view === 'cockpit');
+  }
+  function toggleView(){
+    view = view === 'cockpit' ? 'chase' : 'cockpit';
+    applyView();
+    if(st) hud();
+  }
+  function toggleLock(){
+    lockMode = !lockMode;
+    if(st) hud();
+  }
+  function resize(){
+    if(!R) return;
+    R.setSize(innerWidth, innerHeight);
+    if(composer) composer.setSize(innerWidth, innerHeight);
+    C.aspect = innerWidth/innerHeight;
+    C.updateProjectionMatrix();
+  }
+  function respawn(m, far){
+    m.position.set((Math.random()-.5)*FX*2.4, (Math.random()-.5)*FY*2.4, far ? -(400+Math.random()*600) : -(80+Math.random()*920));
+  }
+  function hud(){
+    const noCore = performance.now() < noCoreUntil;
+    gameHud.innerHTML = `
+      <div class="ghud-row"><span class="glabel">DISTANCE</span><span class="gval">${Math.floor(st.dist)} Mkm</span></div>
+      <div class="ghud-row"><span class="glabel">ENERGY CORE</span><span class="gval"${noCore ? ' style="color:var(--magenta);text-shadow:0 0 10px var(--magenta)"' : ''}>${st.cores} 個${noCore ? ' — NO CORE!' : ''}</span></div>
+      <div class="ghud-row"><span class="glabel">SHIELD</span><span class="gval shield"${st.shields <= 0 ? ' style="color:var(--magenta);text-shadow:0 0 10px var(--magenta)"' : ''}>${'◆ '.repeat(Math.max(0,st.shields))}${'◇ '.repeat(3-Math.max(0,st.shields))}${st.shields <= 0 ? 'CRITICAL' : ''}</span></div>
+      <button class="ghud-btn" id="g-view">VIEW: ${view === 'cockpit' ? 'COCKPIT' : 'CHASE'} (V)</button>
+      <button class="ghud-btn" id="g-lock">LOCK: ${lockMode ? 'AUTO' : 'OFF'} (L)</button>`;
+  }
+  function menu(){
+    gameOverlay.innerHTML = `
+      <div class="gscreen">
+        <div class="gtitle">ASTEROID RUN</div>
+        <p class="gdesc">小惑星帯を突破せよ。マウス(またはタッチ)で機体を操縦し、<br>
+        岩塊を回避しながらエネルギーコア <span style="color:var(--cyan)">◆</span> を回収。<br>
+        <b>${IS_TOUCH ? '右下のFIREボタン: 機関砲' : '左クリック: 機関砲'}</b> — コアを1つ消費して正面の小惑星を粉砕できる(初期コア2個)。<br>
+        速度は時間とともに上昇 — <b>シールドは3枚</b>しかない。<br>
+        ${IS_TOUCH ? '視点・自動ロックオンは左上のHUDボタンでいつでも切替できる。' : '視点は <b>Vキー</b>、自動ロックオンは <b>Lキー</b> / HUDボタンでいつでも切替できる。'}</p>
+        <div class="gview-pick">
+          <div class="planet-chip vchip${view === 'cockpit' ? ' active' : ''}" data-v="cockpit">COCKPIT // 操縦席視点</div>
+          <div class="planet-chip vchip${view === 'chase' ? ' active' : ''}" data-v="chase">CHASE // 追跡視点</div>
+        </div>
+        <a class="btn" id="g-start">LAUNCH ▸</a>
+      </div>`;
+    gameOverlay.querySelectorAll('.vchip').forEach(ch=>ch.addEventListener('click', ()=>{
+      view = ch.dataset.v;
+      gameOverlay.querySelectorAll('.vchip').forEach(c2=>c2.classList.remove('active'));
+      ch.classList.add('active');
+    }));
+    document.getElementById('g-start').addEventListener('click', start);
+  }
+  function start(){
+    if(!R) build();
+    resize();
+    applyView();
+    gameOverlay.innerHTML = '';
+    document.body.classList.add('no-cursor');   // 飛行中はポインターを消す
+    if(IS_TOUCH) gameLayer.classList.add('touch-fire');   // タッチ端末はFIREボタンを表示
+    st = {dist:0, cores:2, shields:3, speed:110, inv:0};   // 初期コア2個(機関砲の試射用)
+    shake = 0;
+    lastFire = 0; noCoreUntil = 0;
+    clearFx();
+    ship.position.set(0, 0, 0);
+    mt.x = 0; mt.y = 0;
+    asts.forEach(m=>respawn(m, false));
+    cores.forEach(m=>respawn(m, true));
+    playing = true; last = performance.now();
+    hud();
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(loop);
+  }
+  function hit(now, m){
+    st.shields--; st.inv = now + 1600;
+    st.speed = Math.max(110, st.speed*.8);   // 衝撃で減速 → 既存の加速度で再加速
+    shake = 1.3;
+    respawn(m, true);
+    gameLayer.classList.add('ghit');
+    setTimeout(()=>gameLayer.classList.remove('ghit'), 240);
+    // 画面全体の小刻み振動(再トリガー対応)
+    gameLayer.classList.remove('gshake');
+    void gameLayer.offsetWidth;
+    gameLayer.classList.add('gshake');
+    setTimeout(()=>gameLayer.classList.remove('gshake'), 470);
+    hud();
+    if(st.shields < 0) gameOver();   // シールド3枚が3発を吸収し、シールドなしの4発目で大破
+  }
+  function gameOver(){
+    playing = false; cancelAnimationFrame(raf);
+    document.body.classList.remove('no-cursor');
+    const score = Math.floor(st.dist*10 + st.cores*500);
+    const best = Math.max(score, +(localStorage.getItem('vg-ast-best')||0));
+    localStorage.setItem('vg-ast-best', best);
+    gameOverlay.innerHTML = `
+      <div class="gscreen">
+        <div class="gtitle" style="text-shadow:0 0 30px rgba(255,46,196,.7)">SHIP LOST</div>
+        <p class="gdesc">機体大破 — 航行距離 ${Math.floor(st.dist)} Mkm / 残コア ${st.cores} 個</p>
+        <div class="gscore">SCORE ${score}<small> / BEST ${best}</small></div>
+        <div class="gbtns"><a class="btn" id="g-retry">RETRY ▸</a><a class="btn magenta" id="g-quit">EXIT</a></div>
+      </div>`;
+    document.getElementById('g-retry').addEventListener('click', start);
+    document.getElementById('g-quit').addEventListener('click', closeLayer);
+    lockButtons();   // 連打クリックの貫通防止
+  }
+  function loop(now){
+    if(!playing) return;
+    raf = requestAnimationFrame(loop);
+    if(gpaused){ last = now; return; }   // 縦持ちガイド表示中は時間を進めない
+    const dt = Math.min(.05, (now-last)/1000); last = now;
+
+    st.speed = Math.min(SPD_MAX, st.speed + dt*6);
+    st.dist += st.speed*dt*.05;
+
+    const tx = mt.x*FX, ty = -mt.y*FY;
+    ship.position.x += (tx - ship.position.x)*Math.min(1, dt*6);
+    ship.position.y += (ty - ship.position.y)*Math.min(1, dt*8);   // 上下は左右より機敏に
+    ship.rotation.z = (tx - ship.position.x)*-.06;
+    ship.rotation.x = (ty - ship.position.y)*.055;
+
+    // 慣性付き入力(視線・ロール・操縦桿を滑らかに)
+    const spdR = Math.min(1, (st.speed-110)/(SPD_MAX-110));
+    sm.x += (mt.x - sm.x)*Math.min(1, dt*5);
+    sm.y += (mt.y - sm.y)*Math.min(1, dt*5);
+    sm.roll += (ship.rotation.z*1.6 - sm.roll)*Math.min(1, dt*4.5);
+    // 機首上げ/下げ(ロールと同じ慣性構造、過大な入力はクランプ)
+    sm.pitch += (Math.max(-.4, Math.min(.4, ship.rotation.x))*1.3 - sm.pitch)*Math.min(1, dt*4.5);
+
+    const lockTgt = lockMode ? findTarget(true) : null;   // 自動ロックオン: 狭い正面コーンで次にぶつかる小惑星を追尾
+
+    if(view === 'chase'){
+      C.position.x += (ship.position.x*.9 - C.position.x)*Math.min(1, dt*5);
+      C.position.y += (ship.position.y*.9 + 4 - C.position.y)*Math.min(1, dt*5);
+      C.position.z = 17;
+      C.lookAt(ship.position.x, ship.position.y, -60);
+    }else{
+      C.position.set(ship.position.x, ship.position.y + .55, ship.position.z + 1.35);
+      C.lookAt(ship.position.x + sm.x*6, ship.position.y + .35 - sm.y*5, -160);
+      C.rotateZ(sm.roll);
+      C.rotateX(sm.pitch);
+      stick.rotation.x = sm.y*.45;
+      stick.rotation.z = -sm.x*.5;
+      lever.rotation.x = -.4 + spdR*.5;
+
+      // レティクル: ロック対象に吸い付き、見かけサイズに合わせて拡縮。非ロック時は定位置の飾りへ
+      let rx = sm.x*.42, ry = -.65 - sm.y*.3, rs = 1;
+      if(lockTgt){
+        C.updateMatrixWorld();
+        const v = C.worldToLocal(lockTgt.position.clone());
+        if(v.z < -.5){
+          const k = 3/-v.z;   // z=-3のレティクル面へ投影
+          rx = v.x*k; ry = v.y*k;
+          rs = Math.min(2.4, Math.max(.85, lockTgt.userData.r*k/.17));
+          rs *= 1 + Math.sin(now/90)*.05;   // ロック中の脈動
+        }
+      }
+      ret.position.x += (rx - ret.position.x)*Math.min(1, dt*12);
+      ret.position.y += (ry - ret.position.y)*Math.min(1, dt*12);
+      ret.scale.setScalar(ret.scale.x + (rs - ret.scale.x)*Math.min(1, dt*10));
+    }
+    if(shake > 0){
+      C.position.x += (Math.random()-.5)*shake*.9;
+      C.position.y += (Math.random()-.5)*shake*.9;
+      C.rotateZ((Math.random()-.5)*shake*.08);
+      shake = Math.max(0, shake - dt*3);
+    }
+    // 速度連動のFOVキック
+    sm.fov += (72 + spdR*12 - sm.fov)*Math.min(1, dt*2);
+    C.fov = sm.fov;
+    C.updateProjectionMatrix();
+
+    const inv = now < st.inv;
+    ship.visible = view === 'chase' && (!inv || Math.floor(now/90)%2 === 0);
+
+    // 高速時のすり抜け(トンネリング)防止: フレーム移動量sdの区間内で最接近点のzを使って判定
+    const sd = st.speed*dt;
+    const nearestDz = dzNow => {
+      const dzPrev = dzNow - sd;
+      if(dzPrev <= 0 && dzNow >= 0) return 0;
+      return Math.abs(dzNow) < Math.abs(dzPrev) ? dzNow : dzPrev;
+    };
+    for(const m of asts){
+      m.position.z += sd;
+      m.rotation.x += m.userData.sx*dt;
+      m.rotation.y += m.userData.sy*dt;
+      if(m.position.z > 26){ respawn(m, true); continue; }
+      if(!inv){
+        const dx = m.position.x-ship.position.x, dy = m.position.y-ship.position.y;
+        const dz = nearestDz(m.position.z-ship.position.z);
+        const rr = m.userData.r + 2.2;
+        if(dx*dx+dy*dy+dz*dz < rr*rr){ hit(now, m); if(!playing) return; }
+      }
+    }
+    for(const m of cores){
+      m.position.z += sd;
+      m.rotation.y += dt*3;
+      if(m.position.z > 26){ respawn(m, true); continue; }
+      const dx = m.position.x-ship.position.x, dy = m.position.y-ship.position.y;
+      const dz = nearestDz(m.position.z-ship.position.z);
+      if(dx*dx+dy*dy+dz*dz < 34){ st.cores++; respawn(m, true); hud(); }
+    }
+    // 機関砲エフェクト(トレーサー/爆発/閃光)
+    for(let i=fx.length-1;i>=0;i--){
+      const f = fx[i];
+      f.t += dt;
+      const k = f.t/f.life;
+      if(f.kind === 'tracer'){
+        f.obj.material.opacity = .9*(1-k);
+      }else if(f.kind === 'boom'){
+        const arr = f.obj.geometry.attributes.position.array;
+        for(let j=0;j<f.vel.length;j++){
+          arr[j*3]   += f.vel[j].x*dt;
+          arr[j*3+1] += f.vel[j].y*dt;
+          arr[j*3+2] += f.vel[j].z*dt + st.speed*dt;   // 破片も後方へ流れる
+        }
+        f.obj.geometry.attributes.position.needsUpdate = true;
+        f.obj.material.opacity = 1-k;
+      }else{   // flash
+        f.obj.position.z += st.speed*dt;
+        f.obj.scale.setScalar(f.s0*(1+k*2.5));
+        f.obj.material.opacity = .95*(1-k);
+      }
+      if(k >= 1){
+        S.remove(f.obj);
+        if(f.obj.geometry) f.obj.geometry.dispose();
+        f.obj.material.dispose();
+        fx.splice(i, 1);
+      }
+    }
+    // レティクルの色・透明度は常時固定(薄いシアン / opacity 0.12) — ロックは位置と拡縮のみで表現
+
+    const dp = dust.geometry.attributes.position.array;
+    const stretch = 2 + st.speed*.08;   // 速度で流線が伸びる
+    for(let i=0;i<LN;i++){
+      let z = dp[i*6+2] + st.speed*dt*1.6;
+      if(z > 20) z = -1000;
+      dp[i*6+2] = z;
+      dp[i*6+5] = z + stretch;
+    }
+    dust.geometry.attributes.position.needsUpdate = true;
+
+    ++frame;
+    if(frame%6 === 0) hud();
+    if(view === 'cockpit' && frame%4 === 0) drawDash();
+    afterimage.uniforms['damp'].value = .68 + spdR*.2;   // 速度で残像(ブラー)強化
+    composer.render();
+  }
+  function input(x, y){
+    mt.x = (x/innerWidth - .5)*2;
+    mt.y = (y/innerHeight - .5)*2;
+  }
+  function stop(){
+    playing = false;
+    cancelAnimationFrame(raf);
+    document.body.classList.remove('no-cursor');
+    gameLayer.classList.remove('touch-fire');
+  }
+  return {menu, stop, input, resize, toggleView, toggleLock, fire};
+})();
+
+/* ---------- GAME 2: SIGNAL TUNER(交信) ---------- */
+const SignalGame = (()=>{
+  const g = waveCv.getContext('2d');
+  const FRAGS = ['私タチハ', '扉ノ', '向コウ側デ', 'アナタヲ', '待ッテイル'];
+  const LOCK_NEED = 1.3;   // 同調維持秒数
+  let raf = 0, playing = false, last = 0, frame = 0, st = null, ph = 0;
+  let mx = .5, my = .35;
+  let actx = null, oscP, oscT, gainP, gainT, muted = false;
+
+  gameHud.addEventListener('click', e=>{
+    if(!e.target.closest('#g-mute')) return;
+    muted = !muted;
+    applyMute();
+    hud();
+  });
+
+  function ensureAudio(){
+    if(actx){ actx.resume(); applyMute(); return; }
+    try{
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      oscP = actx.createOscillator(); gainP = actx.createGain();
+      oscT = actx.createOscillator(); gainT = actx.createGain();
+      oscP.connect(gainP).connect(actx.destination);
+      oscT.connect(gainT).connect(actx.destination);
+      oscP.start(); oscT.start();
+      applyMute();
+    }catch(err){ actx = null; }
+  }
+  function applyMute(){
+    if(!actx) return;
+    gainP.gain.value = muted ? 0 : .025;
+    gainT.gain.value = muted ? 0 : .02;
+  }
+  function resize(){
+    const d = Math.min(devicePixelRatio, 2);
+    waveCv.width = innerWidth*d;
+    waveCv.height = innerHeight*d;
+    g.setTransform(d, 0, 0, d, 0, 0);
+  }
+  function newTarget(){
+    st.tf = 2.2 + Math.random()*6.5;
+    st.ta = .18 + Math.random()*.6;
+  }
+  function hud(){
+    if(!st) return;
+    gameHud.innerHTML = `
+      <div class="ghud-row"><span class="glabel">CHANNEL</span><span class="gval">0${Math.min(5, st.locked+1)} / 05</span></div>
+      <div class="ghud-row"><span class="glabel">TIME</span><span class="gval">${st.time.toFixed(1)} s</span></div>
+      <div class="gfrags">${st.frags.join(' ') || '— 解読待機中 —'}</div>
+      <button class="ghud-btn" id="g-mute">${muted ? 'SOUND: OFF' : 'SOUND: ON'}</button>`;
+  }
+  function menu(){
+    gameOverlay.innerHTML = `
+      <div class="gscreen">
+        <div class="gtitle">SIGNAL TUNER</div>
+        <p class="gdesc">深宇宙から未知の信号を受信中。マウスを動かして自機の波形(シアン)を<br>
+        ターゲット波形(マゼンタ)に同調させよ — <b>横: 周波数 / 縦: 振幅</b>。<br>
+        同調を1.3秒維持でチャンネル確立。5チャンネルで交信成立。制限時間60秒。</p>
+        <a class="btn" id="g-start">TUNE IN ▸</a>
+      </div>`;
+    document.getElementById('g-start').addEventListener('click', start);
+  }
+  function start(){
+    resize();
+    ensureAudio();
+    gameOverlay.innerHTML = '';
+    st = {locked:0, lockT:0, time:60, tol:.11, frags:[], tf:0, ta:0};
+    newTarget();
+    hud();
+    playing = true; last = performance.now();
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(loop);
+  }
+  function end(win){
+    playing = false; cancelAnimationFrame(raf);
+    if(actx) actx.suspend();
+    const score = st.locked*1000 + (win ? Math.floor(st.time*20) : 0);
+    const best = Math.max(score, +(localStorage.getItem('vg-sig-best')||0));
+    localStorage.setItem('vg-sig-best', best);
+    gameOverlay.innerHTML = `
+      <div class="gscreen">
+        <div class="gtitle"${win ? '' : ' style="text-shadow:0 0 30px rgba(255,46,196,.7)"'}>${win ? 'TRANSMISSION DECODED' : 'SIGNAL LOST'}</div>
+        <p class="gdesc">${win ? '全チャンネル同調完了。解読されたメッセージ:' : `時間切れ — 同調できたのは ${st.locked} / 5 チャンネル`}</p>
+        ${win ? `<div class="gfrags" style="display:inline-block;margin-bottom:28px">${FRAGS.join(' ')}</div>` : ''}
+        <div class="gscore">SCORE ${score}<small> / BEST ${best}</small></div>
+        <div class="gbtns"><a class="btn" id="g-retry">RETRY ▸</a><a class="btn magenta" id="g-quit">EXIT</a></div>
+      </div>`;
+    document.getElementById('g-retry').addEventListener('click', start);
+    document.getElementById('g-quit').addEventListener('click', closeLayer);
+    lockButtons();   // 連打クリックの貫通防止
+  }
+  function drawWave(w, mid, H, f, a, phk, jit){
+    g.beginPath();
+    for(let x=0; x<=w; x+=4){
+      const y = mid + Math.sin((x/w)*f*Math.PI*2 + ph*phk)*a*H + (jit ? (Math.random()-.5)*jit : 0);
+      x === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
+    }
+    g.stroke();
+  }
+  function loop(now){
+    if(!playing) return;
+    raf = requestAnimationFrame(loop);
+    if(gpaused){ last = now; if(actx && actx.state === 'running') actx.suspend(); return; }   // 縦持ち中はタイマーと音を停止
+    if(actx && actx.state === 'suspended') actx.resume();
+    const dt = Math.min(.05, (now-last)/1000); last = now;
+    ph += dt*2.4;
+    st.time = Math.max(0, st.time - dt);
+
+    const w = innerWidth, h = innerHeight;
+    const pf = 2 + mx*7.5;
+    const pa = .12 + (1-my)*.66;
+    const df = Math.abs(pf-st.tf)/st.tf;
+    const da = Math.abs(pa-st.ta)/st.ta;
+    const matched = df < st.tol && da < st.tol*1.5;
+    st.lockT = matched ? st.lockT + dt : Math.max(0, st.lockT - dt*1.8);
+
+    if(actx && !muted){
+      oscP.frequency.value = 70 + pf*30;
+      oscT.frequency.value = 70 + st.tf*30;
+    }
+
+    if(st.lockT >= LOCK_NEED){
+      st.locked++;
+      st.frags.push(FRAGS[st.locked-1]);
+      st.lockT = 0;
+      st.tol = Math.max(.05, st.tol*.85);
+      gameLayer.classList.add('glock');
+      setTimeout(()=>gameLayer.classList.remove('glock'), 280);
+      hud();
+      if(st.locked >= 5) return end(true);
+      newTarget();
+    }
+    if(st.time <= 0) return end(false);
+
+    g.clearRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(0,240,255,.07)'; g.lineWidth = 1;
+    g.beginPath();
+    for(let gx=0; gx<=w; gx+=80){ g.moveTo(gx, 0); g.lineTo(gx, h); }
+    for(let gy=0; gy<=h; gy+=80){ g.moveTo(0, gy); g.lineTo(w, gy); }
+    g.stroke();
+
+    const mid = h*.54, H = h*.3;
+    g.save();
+    g.setLineDash([10, 8]);
+    g.strokeStyle = 'rgba(255,46,196,.85)'; g.shadowColor = '#ff2ec4'; g.shadowBlur = 14; g.lineWidth = 2;
+    drawWave(w, mid, H, st.tf, st.ta, 1.3, 0);
+    g.restore();
+
+    g.save();
+    g.strokeStyle = matched ? '#7dffec' : 'rgba(0,240,255,.95)';
+    g.shadowColor = '#00f0ff'; g.shadowBlur = 16; g.lineWidth = 2.5;
+    drawWave(w, mid, H, pf, pa, 1, matched ? 0 : Math.min(1, df+da)*26);
+    g.restore();
+
+    const bw = Math.min(280, w-80), bx = (w-bw)/2, by = w < 720 ? 176 : 30;   // 狭幅ではコンパクトHUDの直下へ
+    g.fillStyle = 'rgba(255,255,255,.08)';
+    g.fillRect(bx, by, bw, 8);
+    g.fillStyle = matched ? '#00f0ff' : 'rgba(0,240,255,.35)';
+    g.fillRect(bx, by, bw*Math.min(1, st.lockT/LOCK_NEED), 8);
+    g.fillStyle = 'rgba(223,233,255,.8)';
+    g.font = '11px Orbitron, monospace';
+    g.textAlign = 'center';
+    g.fillText(`SYNC ${Math.floor(Math.min(1, st.lockT/LOCK_NEED)*100)}%`, w/2, by+28);
+
+    if(++frame%5 === 0) hud();
+  }
+  function input(x, y){ mx = x/innerWidth; my = y/innerHeight; }
+  function stop(){ playing = false; cancelAnimationFrame(raf); if(actx) actx.suspend(); }
+  return {menu, stop, input, resize};
+})();
+
+/* ---------- ゲーム起動の配線 ---------- */
+document.getElementById('btn-explore').addEventListener('click', e=>{
+  e.preventDefault();
+  openLayer('asteroid');
+  AsteroidRun.menu();
+});
+document.getElementById('btn-contact').addEventListener('click', e=>{
+  e.preventDefault();
+  openLayer('signal');
+  SignalGame.menu();
+});
+document.getElementById('game-exit').addEventListener('click', closeLayer);
+addEventListener('keydown', e=>{
+  if(e.key === 'Escape' && activeGame) closeLayer();
+  if((e.key === 'v' || e.key === 'V') && activeGame === 'asteroid') AsteroidRun.toggleView();
+  if((e.key === 'l' || e.key === 'L') && activeGame === 'asteroid') AsteroidRun.toggleLock();
+});
+let lastTouchTs = 0;   // タップ由来の合成mousedownによる誤射防止用
+addEventListener('mousedown', e=>{
+  // 機関砲(UIボタン上のクリックでは発射しない。タッチ端末では専用FIREボタンを使う)
+  if(performance.now() - lastTouchTs < 800) return;
+  if(activeGame === 'asteroid' && e.button === 0 && !e.target.closest('#game-exit,#game-hud,#game-overlay,#fire-btn,#rotate-guide')) AsteroidRun.fire();
+});
+addEventListener('mousemove', e=>{
+  if(activeGame === 'asteroid') AsteroidRun.input(e.clientX, e.clientY);
+  else if(activeGame === 'signal') SignalGame.input(e.clientX, e.clientY);
+});
+const touchSteer = e=>{
+  lastTouchTs = performance.now();
+  if(!activeGame || !e.touches[0]) return;
+  if(e.target.closest('#game-exit,#game-hud,#game-overlay,#fire-btn,#rotate-guide')) return;
+  (activeGame === 'asteroid' ? AsteroidRun : SignalGame).input(e.touches[0].clientX, e.touches[0].clientY);
+};
+addEventListener('touchstart', touchSteer, {passive:true});   // 指を置いた瞬間から操舵
+addEventListener('touchmove', touchSteer, {passive:true});
+
+// タッチ用FIREボタン: 押下で即射撃、長押しで連射(発射間隔はfire()内のクールダウンに従う)
+const fireBtn = document.getElementById('fire-btn');
+let fireRep = 0;
+fireBtn.addEventListener('touchstart', e=>{
+  e.preventDefault();   // 合成マウスイベントを抑止(操舵・誤射防止)
+  lastTouchTs = performance.now();
+  AsteroidRun.fire();
+  clearInterval(fireRep);
+  fireRep = setInterval(()=>AsteroidRun.fire(), 170);
+}, {passive:false});
+const fireEnd = ()=>clearInterval(fireRep);
+fireBtn.addEventListener('touchend', fireEnd);
+fireBtn.addEventListener('touchcancel', fireEnd);
+
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  if(activeGame === 'asteroid') AsteroidRun.resize();
+  if(activeGame === 'signal') SignalGame.resize();
+});
+
+loop();
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+/* ローカル同梱フォント(オフライン用) — どちらも可変フォントで全ウェイトをカバー */
+@font-face {
+  font-family: 'Orbitron';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url('./orbitron.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./notosansjp-subset.woff2') format('woff2');
+}
