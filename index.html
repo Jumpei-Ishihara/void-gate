@@ -885,10 +885,13 @@ function openLayer(which){
   gameCv.style.display = which === 'asteroid' ? 'block' : 'none';
   waveCv.style.display = which === 'signal' ? 'block' : 'none';
   document.body.style.overflow = 'hidden';
-  if(IS_TOUCH && document.documentElement.requestFullscreen){
-    // 対応端末(Android等)はフルスクリーン+横画面に固定。不可ならガイド表示にフォールバック
-    document.documentElement.requestFullscreen()
-      .then(()=>{ if(screen.orientation && screen.orientation.lock) return screen.orientation.lock('landscape'); })
+  // PC/SPともゲーム中はフルスクリーン化してブラウザUIの干渉を防ぐ
+  // (SPはさらに横画面固定を試行。iPhone SafariなどAPI非対応環境は通常表示+回転ガイドで続行)
+  const de = document.documentElement;
+  const fsReq = de.requestFullscreen || de.webkitRequestFullscreen;
+  if(fsReq){
+    Promise.resolve(fsReq.call(de))
+      .then(()=>{ if(IS_TOUCH && screen.orientation && screen.orientation.lock) return screen.orientation.lock('landscape'); })
       .catch(()=>{});
   }
   updateRotateGuide();
@@ -905,7 +908,10 @@ function closeLayer(){
   gameHud.innerHTML = '';
   document.body.style.overflow = '';
   if(screen.orientation && screen.orientation.unlock){ try{ screen.orientation.unlock(); }catch(e){} }
-  if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+  if(document.fullscreenElement || document.webkitFullscreenElement){
+    const fsExit = document.exitFullscreen || document.webkitExitFullscreen;
+    if(fsExit) Promise.resolve(fsExit.call(document)).catch(()=>{});
+  }
 }
 // リザルト直後はボタンを無効化し、連打クリックの貫通(即リトライ/即終了)を防ぐ
 function lockButtons(){

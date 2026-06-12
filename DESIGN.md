@@ -152,8 +152,10 @@ ESCまたはEXITボタンでサイトに復帰する。スコアは`localStorage
 
 ### ゲームは横画面でプレイ（SP）
 - ミニゲームはSPでは**横画面専用**。コックピット計器3面が視界に収まり、左右の操舵幅も確保できるため
-- ゲーム起動時に対応端末（Android Chrome等）ではフルスクリーン化＋`screen.orientation.lock('landscape')`で
-  自動的に横画面へ固定。非対応端末（iOS Safari等）は縦持ちの間
+- **ゲーム中はPC/SPともフルスクリーン**: 起動時にFullscreen API（webkitプレフィックス対応）で全画面化し、
+  ブラウザのツールバー等の干渉を排除。終了時に解除。SPはさらに`screen.orientation.lock('landscape')`で
+  横画面へ自動固定（Android Chrome等）。PCではESCがフルスクリーン解除＝ゲーム終了と一致する。
+  API非対応環境（iPhone Safari等）は通常表示のまま、縦持ちの間
   **「ROTATE DEVICE / 横画面でプレイしてください」ガイド**（回転するスマホアイコン付き）を全画面表示
 - 縦持ちガイド表示中は**ゲームを完全一時停止**（時間・距離・被弾も進まず、SIGNAL TUNERは音も停止）。
   横に回転すると即座に再開する。ガイド表示中もEXITボタンは操作可能
