@@ -324,9 +324,10 @@ body.no-cursor #cursor{
 #rotate-guide p{font-family:'Orbitron','Noto Sans JP',sans-serif;font-size:14px;letter-spacing:.3em;
   color:var(--cyan);text-shadow:0 0 14px rgba(0,240,255,.5);line-height:2.4}
 #rotate-guide p span{font-size:11px;color:var(--dim);letter-spacing:.18em}
-#game-overlay{position:absolute;inset:0;z-index:6;display:flex;align-items:center;justify-content:center;pointer-events:none}
+/* モーダルが画面より高い場合に備えスクロール可能に(margin:autoで通常時は中央寄せ) */
+#game-overlay{position:absolute;inset:0;z-index:6;display:flex;pointer-events:none;overflow-y:auto;-webkit-overflow-scrolling:touch}
 #game-overlay .gscreen{
-  pointer-events:auto;text-align:center;padding:54px 64px;max-width:660px;
+  pointer-events:auto;text-align:center;padding:54px 64px;margin:auto;max-width:min(660px,calc(100% - 32px));
   background:rgba(4,6,22,.78);border:1px solid var(--line);backdrop-filter:blur(16px);
   clip-path:polygon(24px 0,100% 0,100% calc(100% - 24px),calc(100% - 24px) 100%,0 100%,0 24px);
   animation:gsIn .3s ease both;
@@ -343,7 +344,7 @@ body.no-cursor #cursor{
   background:rgba(4,8,24,.55);border:1px solid rgba(255,46,196,.25);padding:8px 14px;min-height:32px}
 
 @media(max-width:720px){
-  #game-overlay .gscreen{padding:38px 26px;margin:0 16px}
+  #game-overlay .gscreen{padding:38px 26px}
   .gtitle{font-size:24px}
   header{padding:18px 22px}
   nav{display:none}
@@ -356,6 +357,17 @@ body.no-cursor #cursor{
   .ghud-btn{font-size:9px;padding:7px 11px;letter-spacing:.18em}
   .gbtns{gap:12px}
   .gfrags{font-size:10px;letter-spacing:.15em}
+}
+/* 横持ちスマホなど低い画面: モーダルを圧縮して1画面に収める */
+@media(max-height:560px){
+  #game-overlay .gscreen{padding:20px 30px;margin:12px auto}
+  .gtitle{font-size:19px;margin-bottom:10px}
+  .gdesc{font-size:11px;line-height:1.75;margin-bottom:14px}
+  .gscore{font-size:15px;margin-bottom:14px}
+  .gview-pick{gap:10px;margin-bottom:14px}
+  .gview-pick .planet-chip{padding:8px 16px;font-size:10px}
+  .gbtns{gap:12px}
+  .gfrags{font-size:10px;padding:6px 10px;min-height:26px}
 }
 @media (prefers-reduced-motion:reduce){
   .reveal{transition:none}
