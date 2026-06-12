@@ -350,6 +350,10 @@ body.no-cursor #cursor{
 .gscore{font-family:'Orbitron',sans-serif;font-size:20px;color:var(--cyan);letter-spacing:.15em;margin-bottom:30px;text-shadow:0 0 16px rgba(0,240,255,.5)}
 .gscore small{color:var(--dim);font-size:12px}
 .gbtns{display:flex;gap:20px;justify-content:center}
+.gfs{display:flex;align-items:center;justify-content:center;gap:9px;
+  font-size:11px;color:var(--dim);letter-spacing:.12em;margin-bottom:20px;user-select:none}
+.gfs input{accent-color:var(--cyan);width:15px;height:15px;margin:0}
+.gfs:hover span{color:var(--text)}
 .gfrags{font-family:'Orbitron','Noto Sans JP',sans-serif;font-size:12px;letter-spacing:.25em;
   color:var(--magenta);text-shadow:0 0 12px rgba(255,46,196,.6);
   background:rgba(4,8,24,.55);border:1px solid rgba(255,46,196,.25);padding:8px 14px;min-height:32px}
@@ -377,6 +381,7 @@ body.no-cursor #cursor{
   .gscore{font-size:15px;margin-bottom:14px}
   .gview-pick{gap:10px;margin-bottom:14px}
   .gview-pick .planet-chip{padding:8px 16px;font-size:10px}
+  .gfs{margin-bottom:12px;font-size:10px}
   .gbtns{gap:12px}
   .gfrags{font-size:10px;padding:6px 10px;min-height:26px}
 }
@@ -868,6 +873,22 @@ const gameCv = document.getElementById('game-canvas');
 const waveCv = document.getElementById('wave-canvas');
 let activeGame = null;
 let gpaused = false;   // SP縦持ち中はゲームを一時停止(横画面ガイド表示)
+let wantFS = localStorage.getItem('vg-fullscreen') !== '0';   // フルスクリーン設定(デフォルトON)
+
+// モード選択画面のチェックボックスを読み取り、ONならフルスクリーン化(SPはさらに横画面固定を試行)
+// LAUNCH/TUNE INのクリック(ユーザー操作)起点で呼ぶこと。iPhone SafariなどAPI非対応環境は通常表示で続行
+function applyFSChoice(){
+  const cb = gameOverlay.querySelector('#g-fs');
+  if(cb){ wantFS = cb.checked; localStorage.setItem('vg-fullscreen', wantFS ? '1' : '0'); }
+  if(!wantFS) return;
+  const de = document.documentElement;
+  const fsReq = de.requestFullscreen || de.webkitRequestFullscreen;
+  if(fsReq){
+    Promise.resolve(fsReq.call(de))
+      .then(()=>{ if(IS_TOUCH && screen.orientation && screen.orientation.lock) return screen.orientation.lock('landscape'); })
+      .catch(()=>{});
+  }
+}
 
 // ミニゲームはSPでは横画面でプレイする
 const portraitMQ = matchMedia('(orientation: portrait)');
@@ -885,15 +906,6 @@ function openLayer(which){
   gameCv.style.display = which === 'asteroid' ? 'block' : 'none';
   waveCv.style.display = which === 'signal' ? 'block' : 'none';
   document.body.style.overflow = 'hidden';
-  // PC/SPともゲーム中はフルスクリーン化してブラウザUIの干渉を防ぐ
-  // (SPはさらに横画面固定を試行。iPhone SafariなどAPI非対応環境は通常表示+回転ガイドで続行)
-  const de = document.documentElement;
-  const fsReq = de.requestFullscreen || de.webkitRequestFullscreen;
-  if(fsReq){
-    Promise.resolve(fsReq.call(de))
-      .then(()=>{ if(IS_TOUCH && screen.orientation && screen.orientation.lock) return screen.orientation.lock('landscape'); })
-      .catch(()=>{});
-  }
   updateRotateGuide();
 }
 function closeLayer(){
@@ -1344,6 +1356,7 @@ const AsteroidRun = (()=>{
           <div class="planet-chip vchip${view === 'cockpit' ? ' active' : ''}" data-v="cockpit">COCKPIT // 操縦席視点</div>
           <div class="planet-chip vchip${view === 'chase' ? ' active' : ''}" data-v="chase">CHASE // 追跡視点</div>
         </div>
+        <label class="gfs"><input type="checkbox" id="g-fs"${wantFS ? ' checked' : ''}><span>フルスクリーンでプレイ</span></label>
         <a class="btn" id="g-start">LAUNCH ▸</a>
       </div>`;
     gameOverlay.querySelectorAll('.vchip').forEach(ch=>ch.addEventListener('click', ()=>{
@@ -1351,7 +1364,7 @@ const AsteroidRun = (()=>{
       gameOverlay.querySelectorAll('.vchip').forEach(c2=>c2.classList.remove('active'));
       ch.classList.add('active');
     }));
-    document.getElementById('g-start').addEventListener('click', start);
+    document.getElementById('g-start').addEventListener('click', ()=>{ applyFSChoice(); start(); });
   }
   function start(){
     if(!R) build();
@@ -1618,9 +1631,10 @@ const SignalGame = (()=>{
         <p class="gdesc">深宇宙から未知の信号を受信中。マウスを動かして自機の波形(シアン)を<br>
         ターゲット波形(マゼンタ)に同調させよ — <b>横: 周波数 / 縦: 振幅</b>。<br>
         同調を1.3秒維持でチャンネル確立。5チャンネルで交信成立。制限時間60秒。</p>
+        <label class="gfs"><input type="checkbox" id="g-fs"${wantFS ? ' checked' : ''}><span>フルスクリーンでプレイ</span></label>
         <a class="btn" id="g-start">TUNE IN ▸</a>
       </div>`;
-    document.getElementById('g-start').addEventListener('click', start);
+    document.getElementById('g-start').addEventListener('click', ()=>{ applyFSChoice(); start(); });
   }
   function start(){
     resize();
