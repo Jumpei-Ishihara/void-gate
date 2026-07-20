@@ -1,6 +1,6 @@
 # SPEC 07c — Phase C: 導入章・NAVIGATION・LAUNCH DECK・HUD/コピー全面差替え
 
-状態: **Draft** ／ 親: [SPEC-07](07-scroll-guide.md) ／ 前提: 07b Verified ／ 外部素材: 不要
+状態: **Implemented (2026-07-20 テスト17/17グリーン・A/B/ゲーム回帰込み。C-08のREADME/meta同期はPhase Dで実施)** ／ 親: [SPEC-07](07-scroll-guide.md) ／ 前提: 07b Verified ／ 外部素材: 不要
 
 ## 1. 目的
 

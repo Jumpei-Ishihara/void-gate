@@ -358,6 +358,18 @@ body.no-cursor #cursor{
   color:var(--magenta);text-shadow:0 0 12px rgba(255,46,196,.6);
   background:rgba(4,8,24,.55);border:1px solid rgba(255,46,196,.25);padding:8px 14px;min-height:32px}
 
+/* SPEC-07c: LAUNCH DECK */
+.deck{display:flex;gap:26px;flex-wrap:wrap;margin:34px 0}
+.deck-bay{flex:1;min-width:250px;padding:28px;background:var(--panel);border:1px solid var(--line);
+  backdrop-filter:blur(10px);clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px)}
+.deck-name{font-family:'Orbitron',sans-serif;font-size:15px;letter-spacing:.25em;color:#fff;margin-bottom:10px}
+.deck-best{font-family:'Orbitron',sans-serif;font-size:22px;color:var(--cyan);letter-spacing:.12em;
+  margin-bottom:22px;text-shadow:0 0 14px rgba(0,240,255,.45)}
+.deck-best small{font-size:10px;color:var(--dim);letter-spacing:.3em;margin-right:8px}
+#quickref .card table{width:100%;border-collapse:collapse;font-size:12px;line-height:1.9}
+#quickref .card td{padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.07);color:var(--text)}
+#quickref .card td:first-child{color:var(--dim);white-space:nowrap;letter-spacing:.08em}
+
 /* SPEC-07b: 訓練章(スクロール3D展開ガイド) */
 .chapter{position:relative;height:220vh}   /* sticky滞在=高さ-100vh=120vh(章の読了尺) */
 .ch-pin{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;justify-content:flex-end;
@@ -423,11 +435,11 @@ body.no-cursor #cursor{
 <header>
   <div class="logo">VOID<span>GATE</span></div>
   <nav>
-    <a href="#hero">HOME</a>
-    <a href="#mission">MISSION</a>
-    <a href="#tech">TECHNOLOGY</a>
-    <a href="#gallery">PLANETS</a>
-    <a href="#contact">CONTACT</a>
+    <a href="#hero">GATE</a>
+    <a href="#ch-flight">FLIGHT</a>
+    <a href="#ch-weapons">WEAPONS</a>
+    <a href="#ch-comm">COMM</a>
+    <a href="#ch-launch">LAUNCH</a>
   </nav>
 </header>
 
@@ -444,70 +456,21 @@ body.no-cursor #cursor{
         <a class="btn magenta magnetic" id="btn-contact" href="#">CONTACT&nbsp;//&nbsp;交信</a>
       </div>
     </div>
-    <div class="scroll-cue">SCROLL</div>
+    <div class="scroll-cue">▼ 発進シークエンス開始</div>
   </section>
 
-  <section id="mission">
-    <div class="reveal">
-      <div class="sec-tag">SECTOR 02 — MISSION</div>
-      <h2>深宇宙は、<br>もう遠くない。</h2>
-      <p class="lead">
-        VOID GATEは、人類の知覚を星間スケールへ拡張するための実験的インターフェースです。
-        スクロールはワープ航行に、カーソルは観測装置に変わる。
-        あなたの操作のひとつひとつが、この宇宙の物理に干渉します。
-        画面のどこかをクリックして、重力波を発生させてみてください。
-      </p>
-    </div>
-  </section>
-
-  <section id="tech">
-    <div class="reveal">
-      <div class="sec-tag">SECTOR 03 — TECHNOLOGY</div>
-      <h2>推進システム</h2>
-      <div class="grid">
-        <div class="card tilt">
-          <div class="glowline"></div>
-          <div class="num">SYS.01</div>
-          <h3>WARP DRIVE</h3>
-          <p>スクロール量を推進力へ変換するカメラ航行システム。ページの縦移動が、そのまま星域間のワープとして描画されます。</p>
-        </div>
-        <div class="card tilt">
-          <div class="glowline"></div>
-          <div class="num">SYS.02</div>
-          <h3>GRAVITY SENSOR</h3>
-          <p>カーソルの位置を重力源として検知し、視差とともに星々がゆるやかに応答。クリックで重力波パルスを放出します。</p>
-        </div>
-        <div class="card tilt">
-          <div class="glowline"></div>
-          <div class="num">SYS.03</div>
-          <h3>NEBULA CORE</h3>
-          <p>数千の発光パーティクルで構成された星雲炉心。加算合成によるリアルタイム描画で、深宇宙の色彩を生成します。</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="gallery">
-    <div class="reveal">
-      <div class="sec-tag">SECTOR 04 — PLANETS</div>
-      <h2>観測対象を選択</h2>
-      <p class="lead">チップを選ぶと、背景の惑星がリアルタイムに変化します。</p>
-      <div class="planet-ui">
-        <div class="planet-chip active" data-planet="aqua">AQUA-7</div>
-        <div class="planet-chip" data-planet="ember">EMBER-3</div>
-        <div class="planet-chip" data-planet="ion">ION-X</div>
-      </div>
-      <div id="planet-data">
-        <b>AQUA-7 // 氷海惑星</b>
-        全球が液体メタンの海に覆われた惑星。地表温度 -182℃。極軌道上に複素リングを持ち、シアンの大気光が観測される。
-      </div>
-    </div>
-  </section>
-
+  <section class="chapter" id="ch-briefing"><div class="ch-pin"></div></section>
+  <section class="chapter" id="ch-flight"><div class="ch-pin"></div></section>
+  <section class="chapter" id="ch-weapons"><div class="ch-pin"></div></section>
+  <section class="chapter" id="ch-survival"><div class="ch-pin"></div></section>
+  <section class="chapter" id="ch-comm"><div class="ch-pin"></div></section>
+  <div id="ch4-vign"></div>
+<!-- SPEC-07b: 訓練章(見出し/本文はJSのCOPYテーブルから注入 — 操作語のPC/SP出し分けのため) -->
   <section id="contact">
     <div class="reveal">
-      <div class="sec-tag">SECTOR 05 — CONTACT</div>
-      <h2>交信チャンネル</h2>
+      <div class="sec-tag">COMM // LIVE UPLINK</div>
+      <h2>実通信チャンネル</h2>
+      <p class="lead">訓練は以上だ。実際に何か送ってみるといい。</p>
       <div class="terminal">
         <div class="term-head"><i></i>UPLINK TERMINAL v3.2 — ENCRYPTED</div>
         <div class="term-body">
@@ -525,14 +488,48 @@ body.no-cursor #cursor{
       </div>
     </div>
   </section>
+  <section id="gallery">
+    <div class="reveal">
+      <div class="sec-tag">BRIEFING 06 / 07 — NAVIGATION</div>
+      <h2>航行宙域の選択</h2>
+      <p class="lead">操作が世界に届くことを確かめる最終訓練だ。宙域チップを選べ — 背景の惑星が即座に応答する。</p>
+      <div class="planet-ui">
+        <div class="planet-chip active" data-planet="aqua">AQUA-7</div>
+        <div class="planet-chip" data-planet="ember">EMBER-3</div>
+        <div class="planet-chip" data-planet="ion">ION-X</div>
+      </div>
+      <div id="planet-data">
+        <b>AQUA-7 // 氷海惑星</b>
+        全球が液体メタンの海に覆われた惑星。地表温度 -182℃。極軌道上に複素リングを持ち、シアンの大気光が観測される。
+      </div>
+    </div>
+  </section>
+  <section id="ch-launch">
+    <div class="reveal">
+      <div class="sec-tag">LAUNCH DECK 07 / 07 — 出撃甲板</div>
+      <h2>出撃せよ。</h2>
+      <p class="lead">訓練修了。2つの任務が発進口で待っている。ベスト記録はこの端末に保存される。</p>
+      <div class="deck">
+        <div class="deck-bay">
+          <div class="deck-name">ASTEROID RUN</div>
+          <div class="deck-best"><small>BEST</small> <span id="best-ast">NO RECORD</span></div>
+          <a class="btn magnetic" id="deck-explore" href="#">EXPLORE&nbsp;//&nbsp;探査開始</a>
+        </div>
+        <div class="deck-bay">
+          <div class="deck-name">SIGNAL TUNER</div>
+          <div class="deck-best"><small>BEST</small> <span id="best-sig">NO RECORD</span></div>
+          <a class="btn magenta magnetic" id="deck-contact" href="#">CONTACT&nbsp;//&nbsp;交信</a>
+        </div>
+      </div>
+      <div class="grid" id="quickref"></div>
+    </div>
+  </section>
+
+
+
+
 </main>
 
-<!-- SPEC-07b: 訓練章(見出し/本文はJSのCOPYテーブルから注入 — 操作語のPC/SP出し分けのため) -->
-<section class="chapter" id="ch-flight"><div class="ch-pin"></div></section>
-<section class="chapter" id="ch-weapons"><div class="ch-pin"></div></section>
-<section class="chapter" id="ch-survival"><div class="ch-pin"></div></section>
-<section class="chapter" id="ch-comm"><div class="ch-pin"></div></section>
-<div id="ch4-vign"></div>
 
 <footer>VOID GATE © 2026 — RENDERED WITH THREE.JS / ALL SIGNALS RESERVED</footer>
 
@@ -739,11 +736,30 @@ addEventListener('scroll', ()=>{
   const max = document.documentElement.scrollHeight - innerHeight;
   scrollT = max > 0 ? scrollY/max : 0;
   document.getElementById('progress-bar').style.height = (scrollT*100)+'%';
-  const sector = Math.min(5, Math.floor(scrollT*5)+1);
-  document.getElementById('hud-status').textContent =
-    `SECTOR 0${sector} / 05 — ${['SIGNAL LOCKED','WARP ENGAGED','SYSTEMS NOMINAL','ORBIT ACQUIRED','UPLINK READY'][sector-1]}`;
+  updateSector();
   checkReveals();
 }, {passive:true});
+
+// SPEC-07c: HUDの章表記(セクション実位置と連動, GDE-06)
+const SECTORS = [
+  ['hero',        'GATE 00 / 07 — 着任確認'],
+  ['ch-briefing', 'BRIEFING 01 / 07 — 任務概要'],
+  ['ch-flight',   'BRIEFING 02 / 07 — 操縦訓練'],
+  ['ch-weapons',  'BRIEFING 03 / 07 — 武装と資源'],
+  ['ch-survival', 'BRIEFING 04 / 07 — 生存規定'],
+  ['ch-comm',     'BRIEFING 05 / 07 — 交信訓練'],
+  ['gallery',     'BRIEFING 06 / 07 — 航行宙域'],
+  ['ch-launch',   'LAUNCH DECK 07 / 07 — 出撃準備完了'],
+];
+function updateSector(){
+  const y = scrollY + innerHeight*.5;
+  let label = SECTORS[0][1];
+  for(const [id, l] of SECTORS){
+    const el = document.getElementById(id);
+    if(el && el.offsetTop <= y) label = l;
+  }
+  document.getElementById('hud-status').textContent = label;
+}
 
 /* ---------- SPEC-07a: スクロールタイムライン + キーフレームカメラ ---------- */
 // 現行挙動(z 80→-180 直線航行)をキーフレーム2点で等価再現。章追加時はここに行を足す
@@ -899,7 +915,7 @@ function checkReveals(){
 checkReveals();
 
 /* ---------- タイピング演出 ---------- */
-const phrases = ['INITIALIZING WARP DRIVE...', '深宇宙航行システム、起動。', 'COORDINATES LOCKED: SECTOR 7G', 'ようこそ、VOID GATEへ。'];
+const phrases = ['INITIALIZING BRIEFING SEQUENCE...', '新任オペレーター、着任を確認。', 'ここから先は訓練を修了した者だけが進める。', 'スクロールで発進準備を開始せよ。'];
 let pi = 0, ci = 0, deleting = false;
 (function type(){
   const el = document.getElementById('typed');
@@ -1012,6 +1028,7 @@ function closeLayer(){
   gameHud.innerHTML = '';
   document.body.style.overflow = '';
   SoundEngine.stopAll();         // ページ側に音を残さない(AUD-11)
+  if(typeof renderBest === 'function') renderBest();   // ベスト記録を最新化(SPEC-07c)
   if(screen.orientation && screen.orientation.unlock){ try{ screen.orientation.unlock(); }catch(e){} }
   if(document.fullscreenElement || document.webkitFullscreenElement){
     const fsExit = document.exitFullscreen || document.webkitExitFullscreen;
@@ -2355,6 +2372,10 @@ const Guide = (()=>{
   const sm = (v, a, b)=>{ const k = Math.min(1, Math.max(0, (v-a)/(b-a))); return k*k*(3-2*k); };
 
   const COPY = {
+    briefing: {num:'BRIEFING 01 / 07', title:'BRIEFING', sub:'任務概要', lines:[
+      [.2,  ()=>'任務は2つ。小惑星帯を突破する探査任務 — ASTEROID RUN。'],
+      [.45, ()=>'そして未知信号との同調を試みる交信任務 — SIGNAL TUNER。'],
+      [.7,  ()=>'順に説明する。まずは操縦訓練からだ。']]},
     flight: {num:'BRIEFING 02 / 07', title:'FLIGHT', sub:'操縦訓練', lines:[
       [.25, ()=>`機体は${pick('マウス','指')}に追従する。画面の行きたい場所へ${pick('カーソルを運べ','指を滑らせろ')}。`],
       [.55, ()=>'上下の機動は左右より機敏だ。縦の回避を恐れるな。'],
@@ -2386,6 +2407,27 @@ const Guide = (()=>{
     }
   }
 
+  // ---- 章01 BRIEFING: 2任務のホログラム予告 ----
+  function buildBriefing(){
+    const g = new THREE.Group();
+    const holoRock = new THREE.Mesh(Assets.rockGeos()[1],
+      new THREE.MeshBasicMaterial({color:0x00f0ff, wireframe:true, transparent:true, opacity:.4,
+        blending:THREE.AdditiveBlending, depthWrite:false}));
+    holoRock.position.set(-5.5, 0, -10); holoRock.scale.setScalar(1.6);
+    const holoWave = new THREE.Mesh(new THREE.TorusGeometry(2.2, .05, 8, 40),
+      new THREE.MeshBasicMaterial({color:0xff2ec4, wireframe:true, transparent:true, opacity:.4,
+        blending:THREE.AdditiveBlending, depthWrite:false}));
+    holoWave.position.set(5.5, 0, -10);
+    g.add(holoRock, holoWave);
+    return {group:g, holoRock, holoWave,
+      update(tl){
+        const app = sm(tl, .05, .3)*(1 - sm(tl, .85, 1));
+        holoRock.material.opacity = .4*app*(0.85 + .15*Math.sin(tl*60));   // ホログラム明滅(tl駆動)
+        holoWave.material.opacity = .4*app*(0.85 + .15*Math.sin(tl*52 + 2));
+        holoRock.rotation.y = tl*4; holoRock.position.y = Math.sin(tl*6.3)*.5;
+        holoWave.rotation.y = tl*3; holoWave.rotation.x = .4 + tl*2; holoWave.position.y = Math.sin(tl*6.3 + 3)*.5;
+      }};
+  }
   // ---- 章02 FLIGHT: 岩帯進入 + 実物機体の入力追従デモ ----
   function buildFlight(){
     const g = new THREE.Group();
@@ -2568,7 +2610,7 @@ const Guide = (()=>{
   }
   function setup(){
     fillDom();
-    const builders = {flight:buildFlight, weapons:buildWeapons, survival:buildSurvival, comm:buildComm};
+    const builders = {briefing:buildBriefing, flight:buildFlight, weapons:buildWeapons, survival:buildSurvival, comm:buildComm};
     for(const id of Object.keys(builders)){
       const st = builders[id]();
       st.group.visible = false;
@@ -2836,6 +2878,49 @@ document.getElementById('btn-contact').addEventListener('click', e=>{
   openLayer('signal');
   SignalGame.menu();
 });
+document.getElementById('deck-explore').addEventListener('click', e=>{
+  e.preventDefault();
+  openLayer('asteroid');
+  AsteroidRun.menu();
+});
+document.getElementById('deck-contact').addEventListener('click', e=>{
+  e.preventDefault();
+  openLayer('signal');
+  SignalGame.menu();
+});
+// SPEC-07c: ベストスコア表示(端末ローカル値)
+function renderBest(){
+  const a = localStorage.getItem('vg-ast-best'), g = localStorage.getItem('vg-sig-best');
+  document.getElementById('best-ast').textContent = a ? Number(a).toLocaleString() : 'NO RECORD';
+  document.getElementById('best-sig').textContent = g ? Number(g).toLocaleString() : 'NO RECORD';
+}
+renderBest();
+// SPEC-07c: 操作早見表(CONTROLS単一ソース、PC/SPで出し分け)
+const CONTROLS = {
+  asteroid: [['操縦', 'マウス移動', '画面をドラッグ'], ['機関砲', '左クリック', '左下のFIREボタン(長押しで連射)'],
+    ['視点切替', 'V / HUDボタン', '起動メニューで選択'], ['ロックオン', 'L / HUDボタン', 'AUTO固定'],
+    ['サウンド', 'M / HUDボタン', 'HUDの♪ボタン'], ['終了', 'ESC / EXIT', 'EXITボタン']],
+  signal: [['周波数', 'マウス横移動', '指の横移動'], ['振幅', 'マウス縦移動', '指の縦移動'],
+    ['サウンド', 'HUDボタン', 'HUDボタン'], ['終了', 'ESC / EXIT', 'EXITボタン']],
+};
+(function renderQuickref(){
+  const idx = IS_TOUCH ? 2 : 1;
+  const card = (name, rows)=>`<div class="card tilt"><div class="glowline"></div>
+    <div class="num">QUICK REF</div><h3>${name}</h3>
+    <table>${rows.map(r=>`<tr><td>${r[0]}</td><td>${r[idx]}</td></tr>`).join('')}</table></div>`;
+  const el = document.getElementById('quickref');
+  el.innerHTML = card('ASTEROID RUN', CONTROLS.asteroid) + card('SIGNAL TUNER', CONTROLS.signal);
+  el.querySelectorAll('.tilt').forEach(cardEl=>{   // 動的追加分にチルトを配線
+    cardEl.addEventListener('mousemove', e=>{
+      const r = cardEl.getBoundingClientRect();
+      const rx = ((e.clientY - r.top)/r.height - .5)*-10;
+      const ry = ((e.clientX - r.left)/r.width - .5)*10;
+      cardEl.style.transform = `perspective(700px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+    });
+    cardEl.addEventListener('mouseleave', ()=>cardEl.style.transform = '');
+  });
+})();
+updateSector();
 document.getElementById('game-exit').addEventListener('click', closeLayer);
 addEventListener('keydown', e=>{
   if(e.key === 'Escape' && activeGame) closeLayer();

@@ -10,7 +10,7 @@
   if(!G){ window.__PBRESULTS = R; console.table(R); return R; }
 
   const info = G.info();
-  t('B-01 4章登録', info.length === 4 && ['flight','weapons','survival','comm'].every(id=>info.find(c=>c.id === id)),
+  t('B-01 4章登録', info.length >= 4 && ['flight','weapons','survival','comm'].every(id=>info.find(c=>c.id === id)),
     info.map(c=>c.id).join(','));
   t('B-01b t範囲が昇順', info.every((c,i)=>c.t1 > c.t0 && (i === 0 || c.t0 >= info[i-1].t0)),
     info.map(c=>`${c.id}:${c.t0.toFixed(2)}-${c.t1.toFixed(2)}`).join(' '));
@@ -101,6 +101,13 @@
 
   // ---- ゲーム回帰 ----
   Tl._setT(0); Tl.update(.016);
+  if(window.__SKIP_NESTED_REG){
+    t('REG phase1〜4', true, 'skipped (上位スイートで実施)');
+    window.__PBRESULTS = R;
+    console.info(`[PhaseB] ${R.length-R.filter(x=>!x.pass).length}/${R.length} pass (nested-reg skipped)`);
+    console.table(R);
+    return R;
+  }
   for(const n of [1,2,3,4]){
     const src = await fetch(`/void-gate/tests/phase${n}.js?b=1`).then(r=>r.text());
     await eval(src);
