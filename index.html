@@ -536,6 +536,7 @@ import * as THREE from 'three';
 import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
 import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
 import {AfterimagePass} from 'three/addons/postprocessing/AfterimagePass.js';
+import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
 
 const canvas = document.getElementById('space');
 const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:false});
@@ -878,6 +879,8 @@ let wantFS = localStorage.getItem('vg-fullscreen') !== '0';   // フルスクリ
 // モード選択画面のチェックボックスを読み取り、ONならフルスクリーン化(SPはさらに横画面固定を試行)
 // LAUNCH/TUNE INのクリック(ユーザー操作)起点で呼ぶこと。iPhone SafariなどAPI非対応環境は通常表示で続行
 function applyFSChoice(){
+  SoundEngine.ensure();          // ユーザー操作起点でAudioContext解禁(AUD-02)
+  SoundEngine.ui('select');
   const cb = gameOverlay.querySelector('#g-fs');
   if(cb){ wantFS = cb.checked; localStorage.setItem('vg-fullscreen', wantFS ? '1' : '0'); }
   if(!wantFS) return;
@@ -900,6 +903,7 @@ function updateRotateGuide(){
 portraitMQ.addEventListener('change', updateRotateGuide);
 
 function openLayer(which){
+  SoundEngine.ensure();
   activeGame = which;
   gameLayer.classList.add('on');
   gameLayer.classList.toggle('touch', IS_TOUCH);
@@ -919,6 +923,7 @@ function closeLayer(){
   gameOverlay.innerHTML = '';
   gameHud.innerHTML = '';
   document.body.style.overflow = '';
+  SoundEngine.stopAll();         // ページ側に音を残さない(AUD-11)
   if(screen.orientation && screen.orientation.unlock){ try{ screen.orientation.unlock(); }catch(e){} }
   if(document.fullscreenElement || document.webkitFullscreenElement){
     const fsExit = document.exitFullscreen || document.webkitExitFullscreen;
@@ -934,11 +939,168 @@ function lockButtons(){
   setTimeout(()=>{ btns.style.pointerEvents = ''; btns.style.opacity = ''; }, 600);
 }
 
+/* ================= サウンドエンジン(SPEC-01) — 全音Web Audio合成 ================= */
+const SoundEngine = (()=>{
+  let ctx = null, master = null, noiseBuf = null, engine = null;
+  let muted = localStorage.getItem('vg-mute') === '1';
+  const voices = new Set();          // 再生中SFX(上限8, AUD-12)
+  const test = {lastSfx: null};
+
+  function ensure(){
+    if(!ctx){
+      try{
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        master = ctx.createGain();
+        master.gain.value = muted ? 0 : 1;
+        master.connect(ctx.destination);
+        noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+        const d = noiseBuf.getChannelData(0);
+        for(let i = 0; i < d.length; i++) d[i] = Math.random()*2 - 1;
+      }catch(e){ ctx = null; return; }
+    }
+    if(ctx.state === 'suspended') ctx.resume().catch(()=>{});
+  }
+  function voice(dur){
+    if(voices.size >= 8){ const oldest = voices.values().next().value; oldest.kill(); }
+    const g = ctx.createGain();
+    g.connect(master);
+    const v = {g, kill(){ try{ g.disconnect(); }catch(e){} voices.delete(v); }};
+    voices.add(v);
+    setTimeout(()=>v.kill(), dur*1000 + 80);
+    return v;
+  }
+  function noise(){ const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true; return s; }
+  // クリックノイズ防止のため指数ランプで減衰(AUD-03)
+  function env(g, t0, peak, dur){
+    g.gain.setValueAtTime(.0001, t0);
+    g.gain.exponentialRampToValueAtTime(peak, t0 + .006);
+    g.gain.exponentialRampToValueAtTime(.0001, t0 + dur);
+  }
+  function tone(v, type, f0, f1, dur, gain, delay=0){
+    const t0 = ctx.currentTime + delay;
+    const o = ctx.createOscillator(); o.type = type;
+    o.frequency.setValueAtTime(f0, t0);
+    if(f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(1,f1), t0 + dur);
+    const og = ctx.createGain(); og.gain.value = gain;
+    o.connect(og).connect(v.g);
+    o.start(t0); o.stop(t0 + dur + .05);
+  }
+
+  function gun(){
+    ensure(); test.lastSfx = {type:'gun'}; if(!ctx) return;
+    const t0 = ctx.currentTime, v = voice(.09);
+    const n = noise(), bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = 4;
+    n.connect(bp).connect(v.g);
+    tone(v, 'square', 220, 90, .09, .5);
+    env(v.g, t0, .4, .09);
+    n.start(t0); n.stop(t0 + .1);
+  }
+  function explosion(r=1){
+    ensure();
+    const big = Math.min(1, r/3);
+    const lpf0 = 500 - big*250;                       // 大きい岩ほど低く重い(AUD-04)
+    test.lastSfx = {type:'explosion', lpf: lpf0}; if(!ctx) return;
+    const dur = .4 + big*.4, t0 = ctx.currentTime, v = voice(dur);
+    const n = noise(), lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(lpf0, t0);
+    lp.frequency.exponentialRampToValueAtTime(60, t0 + dur);
+    n.connect(lp).connect(v.g);
+    tone(v, 'sine', 55 - big*15, 40, dur, .6);        // サブベース
+    env(v.g, t0, .5 + big*.25, dur);
+    n.start(t0); n.stop(t0 + dur + .05);
+  }
+  function impact(critical){
+    ensure(); test.lastSfx = {type:'impact', warn: !!critical}; if(!ctx) return;
+    const t0 = ctx.currentTime, v = voice(critical ? .7 : .15);
+    tone(v, 'triangle', 2700, 2700, .1, .3);
+    tone(v, 'triangle', 3100, 3100, .08, .25);
+    const n = noise(); n.connect(v.g); n.start(t0); n.stop(t0 + .06);
+    if(critical) for(let i = 0; i < 3; i++) tone(v, 'square', 660, 660, .09, .3, .12 + i*.18);   // 警告ブザー(AUD-05)
+    env(v.g, t0, .5, critical ? .7 : .15);
+  }
+  function coreGet(){
+    ensure(); test.lastSfx = {type:'coreGet'}; if(!ctx) return;
+    const t0 = ctx.currentTime, v = voice(.32);
+    [523, 659, 784].forEach((f, i)=>tone(v, 'sine', f, f, .14, .3, i*.06));   // 上昇アルペジオ(AUD-06)
+    env(v.g, t0, .45, .32);
+  }
+  function ui(kind){
+    ensure(); test.lastSfx = {type:'ui:'+kind}; if(!ctx) return;
+    const t0 = ctx.currentTime;
+    if(kind === 'select'){ const v = voice(.05); tone(v, 'sine', 880, 880, .04, .5); env(v.g, t0, .3, .05); }
+    else if(kind === 'over'){ const v = voice(.5); tone(v, 'sawtooth', 220, 80, .5, .4); env(v.g, t0, .4, .5); }
+    else if(kind === 'sync'){ const v = voice(.3); tone(v, 'sine', 1046, 1046, .3, .3); tone(v, 'sine', 1318, 1318, .3, .25); env(v.g, t0, .4, .3); }
+  }
+  // エンジンドローン(AUD-07): 速度でピッチ/フィルタ連動
+  function engineStart(){
+    ensure(); if(!ctx || engine) return;
+    const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
+    o1.type = o2.type = 'sawtooth';
+    o1.frequency.value = 55; o2.frequency.value = 55*1.006;
+    const lpf = ctx.createBiquadFilter(); lpf.type = 'lowpass'; lpf.frequency.value = 300;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.14, ctx.currentTime + .25);
+    o1.connect(lpf); o2.connect(lpf); lpf.connect(g).connect(master);
+    o1.start(); o2.start();
+    engine = {o1, o2, lpf, g};
+  }
+  function engineSpeed(spd){
+    if(!engine) return;
+    const k = Math.min(1, Math.max(0, (spd - 110)/370));
+    const f = 55 + k*55;
+    engine.o1.frequency.value = f;
+    engine.o2.frequency.value = f*1.006;
+    engine.lpf.frequency.value = 300 + k*1100;
+  }
+  function enginePause(p){
+    if(!engine || engine.paused === !!p) return;   // 状態変化時のみランプ(毎フレーム再スケジュール防止)
+    engine.paused = !!p;
+    engine.g.gain.cancelScheduledValues(ctx.currentTime);
+    engine.g.gain.exponentialRampToValueAtTime(p ? .0001 : .14, ctx.currentTime + .15);
+  }
+  function engineStop(){
+    if(!engine) return;
+    const e = engine; engine = null;
+    e.g.gain.cancelScheduledValues(ctx.currentTime);
+    e.g.gain.exponentialRampToValueAtTime(.0001, ctx.currentTime + .18);
+    setTimeout(()=>{ try{ e.o1.stop(); e.o2.stop(); e.g.disconnect(); }catch(err){} }, 240);
+  }
+  // SIGNAL TUNER用の2オシレータ供給(AUD-10)。ゲインはmaster配下=ミュート一元化
+  function beatOsc(){
+    ensure(); if(!ctx) return null;
+    const oP = ctx.createOscillator(), gP = ctx.createGain();
+    const oT = ctx.createOscillator(), gT = ctx.createGain();
+    gP.gain.value = 0; gT.gain.value = 0;
+    oP.connect(gP).connect(master); oT.connect(gT).connect(master);
+    oP.start(); oT.start();
+    return {ctx, oP, gP, oT, gT};
+  }
+  function setMute(m){
+    muted = !!m;
+    localStorage.setItem('vg-mute', muted ? '1' : '0');
+    if(master) master.gain.value = muted ? 0 : 1;
+  }
+  function toggleMute(){ setMute(!muted); }
+  function stopAll(){ [...voices].forEach(v=>v.kill()); engineStop(); }   // AUD-11
+  function _test(){
+    return {ctx, voices: voices.size, engineOn: !!engine,
+      engineFreq: engine ? engine.o1.frequency.value : 0,
+      masterGain: master ? master.gain.value : -1, lastSfx: test.lastSfx};
+  }
+  return {ensure, gun, explosion, impact, coreGet, ui,
+          engineStart, engineSpeed, enginePause, engineStop, beatOsc,
+          setMute, toggleMute, stopAll, _test, get muted(){ return muted; }};
+})();
+
 /* ---------- GAME 1: ASTEROID RUN(探査開始) ---------- */
 const AsteroidRun = (()=>{
   let R, S, C, ship, dust;
   let cockpit, stick, lever, ret, retMat, dcv, dctx, dtex;
-  let composer, afterimage;
+  let composer, afterimage, bloom;
+  const BLOOM_RES = IS_TOUCH ? .5 : 1;   // SPは半解像度(BLM-04)
   let view = 'cockpit', shake = 0;
   let lockMode = true;   // true=自動ロックオン / false=通常モード
   let lastFire = 0, noCoreUntil = 0;
@@ -954,6 +1116,7 @@ const AsteroidRun = (()=>{
   gameHud.addEventListener('click', e=>{
     if(e.target.closest('#g-view')) toggleView();
     if(e.target.closest('#g-lock')) toggleLock();
+    if(e.target.closest('#g-sound')) toggleSound();
   });
 
   function build(){
@@ -1018,6 +1181,10 @@ const AsteroidRun = (()=>{
     composer = new EffectComposer(R);
     composer.setPixelRatio(Math.min(devicePixelRatio, 2));
     composer.addPass(new RenderPass(S, C));
+    // Render → Bloom → Afterimage の順(BLM-02。逆順は残像が再発光しハレーション)
+    bloom = new UnrealBloomPass(
+      new THREE.Vector2(innerWidth*BLOOM_RES, innerHeight*BLOOM_RES), .85, .6, .55);
+    composer.addPass(bloom);
     afterimage = new AfterimagePass(.8);
     composer.addPass(afterimage);
   }
@@ -1291,9 +1458,11 @@ const AsteroidRun = (()=>{
                     : new THREE.Vector3(ship.position.x, ship.position.y, ship.position.z - 320);
     tracer(ship.position.clone().add(new THREE.Vector3(-3.2, -1.2, 1)), aim);
     tracer(ship.position.clone().add(new THREE.Vector3( 3.2, -1.2, 1)), aim);
+    SoundEngine.gun();
     if(tgt){
       st.cores--;
       boom(tgt.position.clone(), tgt.userData.r);
+      SoundEngine.explosion(tgt.userData.r);
       respawn(tgt, true);
       shake = Math.min(1, shake + .25);   // 反動
       hud();
@@ -1317,6 +1486,7 @@ const AsteroidRun = (()=>{
     if(!R) return;
     R.setSize(innerWidth, innerHeight);
     if(composer) composer.setSize(innerWidth, innerHeight);
+    if(bloom) bloom.setSize(innerWidth*BLOOM_RES, innerHeight*BLOOM_RES);
     C.aspect = innerWidth/innerHeight;
     C.updateProjectionMatrix();
   }
@@ -1333,7 +1503,8 @@ const AsteroidRun = (()=>{
       gameHud.innerHTML = `
         <div class="ghud-row"><span class="glabel">DIST</span><span class="gval">${Math.floor(st.dist)}</span></div>
         <div class="ghud-row"><span class="glabel">CORE</span><span class="gval"${warnCore}>${st.cores}${noCore ? '!' : ''}</span></div>
-        <div class="ghud-row"><span class="gval shield"${warnShield}>${shieldIcons.trim()}</span></div>`;
+        <div class="ghud-row"><span class="gval shield"${warnShield}>${shieldIcons.trim()}</span></div>
+        <button class="ghud-btn" id="g-sound">${SoundEngine.muted ? '♪ OFF' : '♪ ON'}</button>`;
       return;
     }
     gameHud.innerHTML = `
@@ -1341,7 +1512,8 @@ const AsteroidRun = (()=>{
       <div class="ghud-row"><span class="glabel">ENERGY CORE</span><span class="gval"${warnCore}>${st.cores} 個${noCore ? ' — NO CORE!' : ''}</span></div>
       <div class="ghud-row"><span class="glabel">SHIELD</span><span class="gval shield"${warnShield}>${shieldIcons}${st.shields <= 0 ? 'CRITICAL' : ''}</span></div>
       <button class="ghud-btn" id="g-view">VIEW: ${view === 'cockpit' ? 'COCKPIT' : 'CHASE'} (V)</button>
-      <button class="ghud-btn" id="g-lock">LOCK: ${lockMode ? 'AUTO' : 'OFF'} (L)</button>`;
+      <button class="ghud-btn" id="g-lock">LOCK: ${lockMode ? 'AUTO' : 'OFF'} (L)</button>
+      <button class="ghud-btn" id="g-sound">SOUND: ${SoundEngine.muted ? 'OFF' : 'ON'} (M)</button>`;
   }
   function menu(){
     gameOverlay.innerHTML = `
@@ -1381,6 +1553,7 @@ const AsteroidRun = (()=>{
     mt.x = 0; mt.y = 0;
     asts.forEach(m=>respawn(m, false));
     cores.forEach(m=>respawn(m, true));
+    SoundEngine.engineStart();
     playing = true; last = performance.now();
     hud();
     cancelAnimationFrame(raf);
@@ -1388,6 +1561,7 @@ const AsteroidRun = (()=>{
   }
   function hit(now, m){
     st.shields--; st.inv = now + 1600;
+    SoundEngine.impact(st.shields <= 0);   // シールド切れ(CRITICAL)は警告ブザー付き
     st.speed = Math.max(110, st.speed*.8);   // 衝撃で減速 → 既存の加速度で再加速
     shake = 1.3;
     respawn(m, true);
@@ -1403,6 +1577,8 @@ const AsteroidRun = (()=>{
   }
   function gameOver(){
     playing = false; cancelAnimationFrame(raf);
+    SoundEngine.engineStop();
+    SoundEngine.ui('over');
     document.body.classList.remove('no-cursor');
     const score = Math.floor(st.dist*10 + st.cores*500);
     const best = Math.max(score, +(localStorage.getItem('vg-ast-best')||0));
@@ -1421,10 +1597,12 @@ const AsteroidRun = (()=>{
   function loop(now){
     if(!playing) return;
     raf = requestAnimationFrame(loop);
-    if(gpaused){ last = now; return; }   // 縦持ちガイド表示中は時間を進めない
+    if(gpaused){ last = now; SoundEngine.enginePause(true); return; }   // 縦持ちガイド表示中は時間を進めない
+    SoundEngine.enginePause(false);
     const dt = Math.min(.05, (now-last)/1000); last = now;
 
     st.speed = Math.min(SPD_MAX, st.speed + dt*6);
+    SoundEngine.engineSpeed(st.speed);
     st.dist += st.speed*dt*.05;
 
     const tx = mt.x*FX, ty = -mt.y*FY;
@@ -1512,7 +1690,7 @@ const AsteroidRun = (()=>{
       if(m.position.z > 26){ respawn(m, true); continue; }
       const dx = m.position.x-ship.position.x, dy = m.position.y-ship.position.y;
       const dz = nearestDz(m.position.z-ship.position.z);
-      if(dx*dx+dy*dy+dz*dz < 34){ st.cores++; respawn(m, true); hud(); }
+      if(dx*dx+dy*dy+dz*dz < 34){ st.cores++; SoundEngine.coreGet(); respawn(m, true); hud(); }
     }
     // 機関砲エフェクト(トレーサー/爆発/閃光)
     for(let i=fx.length-1;i>=0;i--){
@@ -1567,10 +1745,13 @@ const AsteroidRun = (()=>{
   function stop(){
     playing = false;
     cancelAnimationFrame(raf);
+    SoundEngine.engineStop();
     document.body.classList.remove('no-cursor');
     gameLayer.classList.remove('touch-fire');
   }
-  return {menu, stop, input, resize, toggleView, toggleLock, fire};
+  function toggleSound(){ SoundEngine.toggleMute(); hud(); }
+  function debug(){ return {playing, composer, bloom, bloomRes: BLOOM_RES, isTouch: IS_TOUCH}; }
+  return {menu, stop, input, resize, toggleView, toggleLock, toggleSound, fire, debug};
 })();
 
 /* ---------- GAME 2: SIGNAL TUNER(交信) ---------- */
@@ -1580,31 +1761,27 @@ const SignalGame = (()=>{
   const LOCK_NEED = 1.3;   // 同調維持秒数
   let raf = 0, playing = false, last = 0, frame = 0, st = null, ph = 0;
   let mx = .5, my = .35;
-  let actx = null, oscP, oscT, gainP, gainT, muted = false;
+  let actx = null, oscP, oscT, gainP, gainT;   // SoundEngine共有ctx配下(AUD-10)
 
   gameHud.addEventListener('click', e=>{
     if(!e.target.closest('#g-mute')) return;
-    muted = !muted;
+    SoundEngine.toggleMute();
     applyMute();
     hud();
   });
 
   function ensureAudio(){
-    if(actx){ actx.resume(); applyMute(); return; }
-    try{
-      actx = new (window.AudioContext || window.webkitAudioContext)();
-      oscP = actx.createOscillator(); gainP = actx.createGain();
-      oscT = actx.createOscillator(); gainT = actx.createGain();
-      oscP.connect(gainP).connect(actx.destination);
-      oscT.connect(gainT).connect(actx.destination);
-      oscP.start(); oscT.start();
-      applyMute();
-    }catch(err){ actx = null; }
+    if(actx){ SoundEngine.ensure(); applyMute(); return; }
+    const b = SoundEngine.beatOsc();
+    if(!b) return;
+    actx = b.ctx; oscP = b.oP; gainP = b.gP; oscT = b.oT; gainT = b.gT;
+    applyMute();
   }
   function applyMute(){
     if(!actx) return;
-    gainP.gain.value = muted ? 0 : .025;
-    gainT.gain.value = muted ? 0 : .02;
+    // マスターゲインで一元ミュートされるため、ここでは基準音量のみ設定
+    gainP.gain.value = .025;
+    gainT.gain.value = .02;
   }
   function resize(){
     const d = Math.min(devicePixelRatio, 2);
@@ -1622,7 +1799,7 @@ const SignalGame = (()=>{
       <div class="ghud-row"><span class="glabel">CHANNEL</span><span class="gval">0${Math.min(5, st.locked+1)} / 05</span></div>
       <div class="ghud-row"><span class="glabel">TIME</span><span class="gval">${st.time.toFixed(1)} s</span></div>
       <div class="gfrags">${st.frags.join(' ') || '— 解読待機中 —'}</div>
-      <button class="ghud-btn" id="g-mute">${muted ? 'SOUND: OFF' : 'SOUND: ON'}</button>`;
+      <button class="ghud-btn" id="g-mute">${SoundEngine.muted ? 'SOUND: OFF' : 'SOUND: ON'}</button>`;
   }
   function menu(){
     gameOverlay.innerHTML = `
@@ -1649,7 +1826,7 @@ const SignalGame = (()=>{
   }
   function end(win){
     playing = false; cancelAnimationFrame(raf);
-    if(actx) actx.suspend();
+    if(gainP){ gainP.gain.value = 0; gainT.gain.value = 0; }   // 共有ctxはsuspendせずビート音のみ停止
     const score = st.locked*1000 + (win ? Math.floor(st.time*20) : 0);
     const best = Math.max(score, +(localStorage.getItem('vg-sig-best')||0));
     localStorage.setItem('vg-sig-best', best);
@@ -1676,8 +1853,8 @@ const SignalGame = (()=>{
   function loop(now){
     if(!playing) return;
     raf = requestAnimationFrame(loop);
-    if(gpaused){ last = now; if(actx && actx.state === 'running') actx.suspend(); return; }   // 縦持ち中はタイマーと音を停止
-    if(actx && actx.state === 'suspended') actx.resume();
+    if(gpaused){ last = now; if(gainP) gainP.gain.value = gainT.gain.value = 0; return; }   // 縦持ち中はタイマーと音を停止
+    if(gainP && gainP.gain.value === 0) applyMute();
     const dt = Math.min(.05, (now-last)/1000); last = now;
     ph += dt*2.4;
     st.time = Math.max(0, st.time - dt);
@@ -1690,13 +1867,14 @@ const SignalGame = (()=>{
     const matched = df < st.tol && da < st.tol*1.5;
     st.lockT = matched ? st.lockT + dt : Math.max(0, st.lockT - dt*1.8);
 
-    if(actx && !muted){
+    if(actx){
       oscP.frequency.value = 70 + pf*30;
       oscT.frequency.value = 70 + st.tf*30;
     }
 
     if(st.lockT >= LOCK_NEED){
       st.locked++;
+      SoundEngine.ui('sync');
       st.frags.push(FRAGS[st.locked-1]);
       st.lockT = 0;
       st.tol = Math.max(.05, st.tol*.85);
@@ -1741,7 +1919,7 @@ const SignalGame = (()=>{
     if(++frame%5 === 0) hud();
   }
   function input(x, y){ mx = x/innerWidth; my = y/innerHeight; }
-  function stop(){ playing = false; cancelAnimationFrame(raf); if(actx) actx.suspend(); }
+  function stop(){ playing = false; cancelAnimationFrame(raf); if(gainP){ gainP.gain.value = 0; gainT.gain.value = 0; } }
   return {menu, stop, input, resize};
 })();
 
@@ -1761,6 +1939,7 @@ addEventListener('keydown', e=>{
   if(e.key === 'Escape' && activeGame) closeLayer();
   if((e.key === 'v' || e.key === 'V') && activeGame === 'asteroid') AsteroidRun.toggleView();
   if((e.key === 'l' || e.key === 'L') && activeGame === 'asteroid') AsteroidRun.toggleLock();
+  if((e.key === 'm' || e.key === 'M') && activeGame === 'asteroid') AsteroidRun.toggleSound();
 });
 let lastTouchTs = 0;   // タップ由来の合成mousedownによる誤射防止用
 addEventListener('mousedown', e=>{
@@ -1804,6 +1983,9 @@ addEventListener('resize', ()=>{
 });
 
 loop();
+
+// テストハーネス用の公開フック(specs/00 §5)。ゲーム挙動には関与しない
+window.VG = {SoundEngine, AsteroidRun, SignalGame, openLayer, closeLayer};
 </script>
 </body>
 </html>
