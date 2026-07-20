@@ -548,6 +548,18 @@ scene.fog = new THREE.FogExp2(0x030014, 0.0028);
 const camera = new THREE.PerspectiveCamera(62, innerWidth/innerHeight, 0.1, 1200);
 camera.position.set(0, 0, 80);
 
+const IS_TOUCH = matchMedia('(hover:none)').matches || 'ontouchstart' in window;
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// SPEC-07a: ページ側合成(PCのみ軽量ブルーム。フレーム予算超過で自動OFF)
+const pageComposer = new EffectComposer(renderer);
+pageComposer.addPass(new RenderPass(scene, camera));
+let pageBloom = null;
+if(!IS_TOUCH){
+  pageBloom = new UnrealBloomPass(new THREE.Vector2(innerWidth*.5, innerHeight*.5), .5, .6, .62);
+  pageComposer.addPass(pageBloom);
+}
+
 /* ---------- 丸い発光スプライトを動的生成 ---------- */
 function glowTexture(inner='rgba(255,255,255,1)', outer='rgba(255,255,255,0)'){
   const c = document.createElement('canvas'); c.width = c.height = 64;
@@ -708,20 +720,72 @@ addEventListener('scroll', ()=>{
   checkReveals();
 }, {passive:true});
 
+/* ---------- SPEC-07a: スクロールタイムライン + キーフレームカメラ ---------- */
+// 現行挙動(z 80→-180 直線航行)をキーフレーム2点で等価再現。章追加時はここに行を足す
+const CAM = [
+  {t:0, x:0, y:0, z:80,   fov:62},
+  {t:1, x:0, y:0, z:-180, fov:62},
+];
+const Tl = (()=>{
+  let T = 0, smoothT = 0;
+  const chapters = [];
+  function sample(){
+    const max = document.documentElement.scrollHeight - innerHeight;
+    T = max > 0 ? scrollY/max : 0;
+  }
+  function camAt(t){
+    let a = CAM[0], b = CAM[CAM.length-1];
+    for(let i = 0; i < CAM.length-1; i++)
+      if(t >= CAM[i].t && t <= CAM[i+1].t){ a = CAM[i]; b = CAM[i+1]; break; }
+    const span = (b.t - a.t) || 1;
+    let k = Math.min(1, Math.max(0, (t - a.t)/span));
+    k = k*k*(3 - 2*k);   // smoothstep(章境界の緩急)
+    return {x: a.x + (b.x-a.x)*k, y: a.y + (b.y-a.y)*k,
+            z: a.z + (b.z-a.z)*k, fov: a.fov + (b.fov-a.fov)*k};
+  }
+  function update(dt){
+    smoothT += (T - smoothT)*Math.min(1, dt*4);
+    for(const c of chapters){
+      const tl = Math.min(1, Math.max(0, (smoothT - c.t0)/(c.t1 - c.t0)));
+      c.update(tl);   // 純関数駆動(SCR-05): 同じtlなら同じ見た目
+    }
+  }
+  return {register: c=>chapters.push(c),
+    _unregister(id){ const i = chapters.findIndex(c=>c.id === id); if(i >= 0) chapters.splice(i, 1); },
+    sample, update, camAt,
+    get t(){ return smoothT; },
+    _setT(v){ T = v; smoothT = v; }};
+})();
+addEventListener('scroll', Tl.sample, {passive:true});
+
 /* ---------- メインループ ---------- */
 const clock = new THREE.Clock();
+let pagePrevT = 0, pageMs = 8, pageOver = 0;
 function loop(){
   requestAnimationFrame(loop);
   const t = clock.getElapsedTime();
+  const dtP = Math.min(.05, t - pagePrevT); pagePrevT = t;
 
-  // パララックス + ワープ航行
+  // タイムライン更新(SPEC-07a) + パララックス + キーフレームカメラ航行
+  Tl.update(dtP);
+  const cam = Tl.camAt(Tl.t);
   mouse.x += (mouse.tx - mouse.x)*.05;
   mouse.y += (mouse.ty - mouse.y)*.05;
-  const targetZ = 80 - scrollT*260;
-  camera.position.z += (targetZ - camera.position.z)*.06;
-  camera.position.x += (mouse.x*7 - camera.position.x)*.05;
-  camera.position.y += (-mouse.y*5 - camera.position.y)*.05;
+  camera.position.z += (cam.z - camera.position.z)*.06;
+  camera.position.x += (cam.x + mouse.x*7 - camera.position.x)*.05;
+  camera.position.y += (cam.y - mouse.y*5 - camera.position.y)*.05;
+  if(Math.abs(camera.fov - cam.fov) > .01){
+    camera.fov += (cam.fov - camera.fov)*.1;
+    camera.updateProjectionMatrix();
+  }
   camera.lookAt(0, 0, camera.position.z - 100);
+
+  // ページブルームの予算監視(3秒超過で恒久OFF)
+  pageMs += (dtP*1000 - pageMs)*.05;
+  if(pageBloom && pageBloom.enabled && pageMs > 12){
+    pageOver += dtP;
+    if(pageOver > 3){ pageBloom.enabled = false; console.info('[PageBloom] off (budget)'); }
+  }else pageOver = 0;
 
   // 星のきらめき + 各層パララックス
   stars.forEach((s,i)=>{
@@ -763,7 +827,7 @@ function loop(){
   ringX += (curX - ringX)*.18; ringY += (curY - ringY)*.18;
   cursorRing.style.left = ringX+'px'; cursorRing.style.top = ringY+'px';
 
-  if(!activeGame) renderer.render(scene, camera);
+  if(!activeGame) pageComposer.render();
 }
 
 /* ---------- カスタムカーソル ---------- */
@@ -869,8 +933,6 @@ document.getElementById('send').addEventListener('click', ()=>{
 const gameLayer = document.getElementById('game-layer');
 const gameHud = document.getElementById('game-hud');
 const gameOverlay = document.getElementById('game-overlay');
-const IS_TOUCH = matchMedia('(hover:none)').matches || 'ontouchstart' in window;
-const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const gameCv = document.getElementById('game-canvas');
 const waveCv = document.getElementById('wave-canvas');
 let activeGame = null;
@@ -1096,22 +1158,8 @@ const SoundEngine = (()=>{
           setMute, toggleMute, stopAll, _test, get muted(){ return muted; }};
 })();
 
-/* ---------- GAME 1: ASTEROID RUN(探査開始) ---------- */
-const AsteroidRun = (()=>{
-  let R, S, C, ship, dust;
-  let cockpit, stick, lever, ret, retMat, dcv, dctx, dtex;
-  let composer, afterimage, bloom;
-  const BLOOM_RES = IS_TOUCH ? .5 : 1;   // SPは半解像度(BLM-04)
-  let view = 'cockpit', shake = 0;
-  let lockMode = true;   // true=自動ロックオン / false=通常モード
-  let lastFire = 0, noCoreUntil = 0;
-  const rockGeos = [], rockMats = [];   // SPEC-03: 岩ジオメトリ/マテリアルの共有プール
-  let shipFx = null, cptFx = null;      // SPEC-05: 機体/コックピット装飾の参照
-  let bgFx = null, motes = null;        // SPEC-06: 遠景/塵レイヤー
-  const MOTES_N = IS_TOUCH ? 300 : 600;
-  let shardsBudget = 0;                 // SPEC-06 PRF: 品質段階で可変(0=buildで初期化)
-  let glitchUntil = 0;                  // SPEC-04 FX-06: 被弾時の計器グリッチ終了時刻
-
+/* ================= 共有3Dファクトリ Assets (SPEC-07a) — ゲームとページ双方から利用 ================= */
+const Assets = (()=>{
   // 岩の頂点変位(seed付き再現性): 大起伏(sin合成) + クレーター凹み(AST-01/02)
   function deformRock(geo, seed){
     let s = seed>>>0;
@@ -1196,6 +1244,96 @@ const AsteroidRun = (()=>{
     out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     return out;
   }
+
+  let _rockGeos = null, _rockMats = null, _coreShared = null;
+  function rockGeos(){
+    if(!_rockGeos){
+      _rockGeos = [];
+      for(let g = 0; g < 8; g++)
+        _rockGeos.push(deformRock(new THREE.IcosahedronGeometry(1, IS_TOUCH ? 2 : 3), 1000 + g*77));
+    }
+    return _rockGeos;
+  }
+  function rockMats(){
+    if(!_rockMats){
+      const tx = makeRockTex(IS_TOUCH ? 256 : 512);
+      _rockMats = [0x8a8fa8, 0x9a8878, 0x7d88a8].map(c=>new THREE.MeshStandardMaterial({
+        color:c, map:tx, bumpMap:tx, bumpScale:.06, roughness:.95, metalness:.1}));
+    }
+    return _rockMats;
+  }
+  // エネルギーコア(内核+halo+二重リング) — SPEC-05 COR仕様と同一
+  function buildCore(){
+    if(!_coreShared) _coreShared = {
+      geo: new THREE.OctahedronGeometry(1.6),
+      ringA: new THREE.TorusGeometry(2.4, .09, 6, 24),
+      ringB: new THREE.TorusGeometry(3.0, .055, 6, 24),
+      matA: new THREE.MeshBasicMaterial({color:0x00f0ff, transparent:true, opacity:.7, blending:THREE.AdditiveBlending, depthWrite:false}),
+      matB: new THREE.MeshBasicMaterial({color:0xbffcff, transparent:true, opacity:.45, blending:THREE.AdditiveBlending, depthWrite:false})};
+    const m = new THREE.Mesh(_coreShared.geo,
+      new THREE.MeshBasicMaterial({color:0x00f0ff, transparent:true, opacity:.95, blending:THREE.AdditiveBlending}));
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x00f0ff, blending:THREE.AdditiveBlending, depthWrite:false}));
+    halo.scale.set(9, 9, 1);
+    const ring1 = new THREE.Mesh(_coreShared.ringA, _coreShared.matA); ring1.rotation.x = .5;
+    const ring2 = new THREE.Mesh(_coreShared.ringB, _coreShared.matB); ring2.rotation.z = .9;
+    m.add(halo, ring1, ring2);
+    m.userData.ring1 = ring1; m.userData.ring2 = ring2;
+    return m;
+  }
+  // 機体一式(SPEC-05 SHP仕様と同一)。partsは装飾更新用の参照
+  function buildShip(){
+    const hull = new THREE.MeshStandardMaterial({color:0xbfd8ff, metalness:.85, roughness:.35, emissive:0x16335f});
+    const group = new THREE.Group();
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(1.3, 5.2, 4), hull);
+    nose.rotation.x = -Math.PI/2;
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(7.5, .3, 2.4), hull);
+    wing.position.set(0, -.4, 1.2);
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(.3, 2.4, 1.8), hull);
+    fin.position.set(0, .9, 1.6);
+    const eng = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x00f0ff, blending:THREE.AdditiveBlending, depthWrite:false}));
+    eng.scale.set(4, 4, 1); eng.position.set(0, 0, 3.2);
+    group.add(nose, wing, fin, eng);
+    const nozzles = new THREE.Mesh(mergeGeo([
+      {g:new THREE.CylinderGeometry(.42, .58, 1.3, 12), p:[-1.6, -.15, 2.6], r:[Math.PI/2, 0, 0]},
+      {g:new THREE.CylinderGeometry(.42, .58, 1.3, 12), p:[ 1.6, -.15, 2.6], r:[Math.PI/2, 0, 0]},
+    ]), hull);
+    const nozzleGlow = new THREE.Mesh(mergeGeo([
+      {g:new THREE.CircleGeometry(.34, 14), p:[-1.6, -.15, 3.28]},
+      {g:new THREE.CircleGeometry(.34, 14), p:[ 1.6, -.15, 3.28]},
+    ]), new THREE.MeshBasicMaterial({color:0x7df1ff, transparent:true, opacity:.9,
+      blending:THREE.AdditiveBlending, depthWrite:false}));
+    const exMat = new THREE.SpriteMaterial({map:starTex, color:0x66e8ff, transparent:true,
+      opacity:.55, blending:THREE.AdditiveBlending, depthWrite:false});
+    const ex1 = new THREE.Sprite(exMat), ex2 = new THREE.Sprite(exMat);
+    ex1.position.set(-1.6, -.15, 4.0); ex2.position.set(1.6, -.15, 4.0);
+    const tipL = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0xff4455,
+      transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false}));
+    const tipR = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x55ff88,
+      transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false}));
+    tipL.position.set(-3.75, -.4, 1.2); tipR.position.set(3.75, -.4, 1.2);
+    tipL.scale.setScalar(1.1); tipR.scale.setScalar(1.1);
+    group.add(nozzles, nozzleGlow, ex1, ex2, tipL, tipR);
+    return {group, parts:{nozzles, nozzleGlow, exhaust:[ex1, ex2], tips:[tipL, tipR]}};
+  }
+  return {deformRock, makeRockTex, mergeGeo, rockGeos, rockMats, buildCore, buildShip};
+})();
+
+/* ---------- GAME 1: ASTEROID RUN(探査開始) ---------- */
+const AsteroidRun = (()=>{
+  let R, S, C, ship, dust;
+  let cockpit, stick, lever, ret, retMat, dcv, dctx, dtex;
+  let composer, afterimage, bloom;
+  const BLOOM_RES = IS_TOUCH ? .5 : 1;   // SPは半解像度(BLM-04)
+  let view = 'cockpit', shake = 0;
+  let lockMode = true;   // true=自動ロックオン / false=通常モード
+  let lastFire = 0, noCoreUntil = 0;
+  const rockGeos = [], rockMats = [];   // SPEC-03: 岩ジオメトリ/マテリアルの共有プール
+  let shipFx = null, cptFx = null;      // SPEC-05: 機体/コックピット装飾の参照
+  let bgFx = null, motes = null;        // SPEC-06: 遠景/塵レイヤー
+  const MOTES_N = IS_TOUCH ? 300 : 600;
+  let shardsBudget = 0;                 // SPEC-06 PRF: 品質段階で可変(0=buildで初期化)
+  let glitchUntil = 0;                  // SPEC-04 FX-06: 被弾時の計器グリッチ終了時刻
+
   const asts = [], cores = [];
   let raf = 0, playing = false, last = 0, frame = 0, st = null;
   const mt = {x:0, y:0};
@@ -1219,39 +1357,10 @@ const AsteroidRun = (()=>{
     C = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, .1, 1500);
     C.position.set(0, 4, 17);
 
-    const hull = new THREE.MeshStandardMaterial({color:0xbfd8ff, metalness:.85, roughness:.35, emissive:0x16335f});
-    ship = new THREE.Group();
-    const nose = new THREE.Mesh(new THREE.ConeGeometry(1.3, 5.2, 4), hull);
-    nose.rotation.x = -Math.PI/2;
-    const wing = new THREE.Mesh(new THREE.BoxGeometry(7.5, .3, 2.4), hull);
-    wing.position.set(0, -.4, 1.2);
-    const fin = new THREE.Mesh(new THREE.BoxGeometry(.3, 2.4, 1.8), hull);
-    fin.position.set(0, .9, 1.6);
-    const eng = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x00f0ff, blending:THREE.AdditiveBlending, depthWrite:false}));
-    eng.scale.set(4, 4, 1); eng.position.set(0, 0, 3.2);
-    ship.add(nose, wing, fin, eng);
-    // SPEC-05 SHP: エンジンノズル(結合1メッシュ)+ノズル発光+速度連動排気+翼端灯
-    const nozzles = new THREE.Mesh(mergeGeo([
-      {g:new THREE.CylinderGeometry(.42, .58, 1.3, 12), p:[-1.6, -.15, 2.6], r:[Math.PI/2, 0, 0]},
-      {g:new THREE.CylinderGeometry(.42, .58, 1.3, 12), p:[ 1.6, -.15, 2.6], r:[Math.PI/2, 0, 0]},
-    ]), hull);
-    const nozzleGlow = new THREE.Mesh(mergeGeo([
-      {g:new THREE.CircleGeometry(.34, 14), p:[-1.6, -.15, 3.28]},
-      {g:new THREE.CircleGeometry(.34, 14), p:[ 1.6, -.15, 3.28]},
-    ]), new THREE.MeshBasicMaterial({color:0x7df1ff, transparent:true, opacity:.9,
-      blending:THREE.AdditiveBlending, depthWrite:false}));
-    const exMat = new THREE.SpriteMaterial({map:starTex, color:0x66e8ff, transparent:true,
-      opacity:.55, blending:THREE.AdditiveBlending, depthWrite:false});
-    const ex1 = new THREE.Sprite(exMat), ex2 = new THREE.Sprite(exMat);
-    ex1.position.set(-1.6, -.15, 4.0); ex2.position.set(1.6, -.15, 4.0);
-    const tipL = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0xff4455,
-      transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false}));
-    const tipR = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x55ff88,
-      transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false}));
-    tipL.position.set(-3.75, -.4, 1.2); tipR.position.set(3.75, -.4, 1.2);
-    tipL.scale.setScalar(1.1); tipR.scale.setScalar(1.1);
-    ship.add(nozzles, nozzleGlow, ex1, ex2, tipL, tipR);
-    shipFx = {nozzles, nozzleGlow, exhaust:[ex1, ex2], tips:[tipL, tipR]};
+    // SPEC-07a: 機体はAssetsファクトリから生成(構造はSPEC-05のまま)
+    const shipBuilt = Assets.buildShip();
+    ship = shipBuilt.group;
+    shipFx = shipBuilt.parts;
     S.add(ship);
 
     S.add(new THREE.AmbientLight(0x445577, 2));
@@ -1259,12 +1368,9 @@ const AsteroidRun = (()=>{
     key.position.set(40, 60, 30);
     S.add(key);
 
-    // SPEC-03: 8種の変形済みジオメトリをプールし、個体差のある岩塊を生成
-    for(let g = 0; g < 8; g++)
-      rockGeos.push(deformRock(new THREE.IcosahedronGeometry(1, IS_TOUCH ? 2 : 3), 1000 + g*77));
-    const rockTex = makeRockTex(IS_TOUCH ? 256 : 512);
-    [0x8a8fa8, 0x9a8878, 0x7d88a8].forEach(c=>rockMats.push(new THREE.MeshStandardMaterial({
-      color:c, map:rockTex, bumpMap:rockTex, bumpScale:.06, roughness:.95, metalness:.1})));
+    // SPEC-07a: 岩プール/マテリアルは共有ファクトリAssetsから取得(SPEC-03仕様は不変)
+    Assets.rockGeos().forEach(g=>rockGeos.push(g));
+    Assets.rockMats().forEach(m=>rockMats.push(m));
     for(let i=0;i<46;i++){
       const m = new THREE.Mesh(rockGeos[i%8], rockMats[i%3]);
       const r = 2 + Math.random()*6;
@@ -1273,20 +1379,9 @@ const AsteroidRun = (()=>{
       m.userData = {r, sx:(Math.random()-.5)*.5, sy:(Math.random()-.5)*.5, sz:(Math.random()-.5)*.4};
       S.add(m); asts.push(m);
     }
-    const coreGeo = new THREE.OctahedronGeometry(1.6);
-    const ringGeoA = new THREE.TorusGeometry(2.4, .09, 6, 24);
-    const ringGeoB = new THREE.TorusGeometry(3.0, .055, 6, 24);
-    const ringMatA = new THREE.MeshBasicMaterial({color:0x00f0ff, transparent:true, opacity:.7, blending:THREE.AdditiveBlending, depthWrite:false});
-    const ringMatB = new THREE.MeshBasicMaterial({color:0xbffcff, transparent:true, opacity:.45, blending:THREE.AdditiveBlending, depthWrite:false});
+    // SPEC-07a: コアはAssetsファクトリから生成(構造はSPEC-05 CORのまま)
     for(let i=0;i<6;i++){
-      const m = new THREE.Mesh(coreGeo, new THREE.MeshBasicMaterial({color:0x00f0ff, transparent:true, opacity:.95, blending:THREE.AdditiveBlending}));
-      const halo = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x00f0ff, blending:THREE.AdditiveBlending, depthWrite:false}));
-      halo.scale.set(9, 9, 1);
-      // COR-01: 軌道傾斜つき二重リング(異速回転はstepVisualで)
-      const ring1 = new THREE.Mesh(ringGeoA, ringMatA); ring1.rotation.x = .5;
-      const ring2 = new THREE.Mesh(ringGeoB, ringMatB); ring2.rotation.z = .9;
-      m.add(halo, ring1, ring2);
-      m.userData.ring1 = ring1; m.userData.ring2 = ring2;
+      const m = Assets.buildCore();
       S.add(m); cores.push(m);
     }
     // スピードライン(速度に応じて伸びる流線)
@@ -1424,7 +1519,7 @@ const AsteroidRun = (()=>{
       {g:B(.05,.05,.05), p:[-1.30,-1.10,-.88], r:[0,.5,0]},
       {g:B(.05,.05,.05), p:[ 1.30,-1.10,-.88], r:[0,-.5,0]},
     ];
-    cockpit.add(new THREE.Mesh(mergeGeo(gDark), dark), new THREE.Mesh(mergeGeo(gMetal), metal));
+    cockpit.add(new THREE.Mesh(Assets.mergeGeo(gDark), dark), new THREE.Mesh(Assets.mergeGeo(gMetal), metal));
 
     // CPT-03: 非同期明滅インジケータ(位相ずらし) + CPT-04: CRITICAL赤色非常灯
     const lamps = [];
@@ -1494,7 +1589,7 @@ const AsteroidRun = (()=>{
       };
       bz.push(bar(.80,.035,0,.30), bar(.80,.035,0,-.30), bar(.035,.64,-.385,0), bar(.035,.64,.385,0));
     }
-    cockpit.add(new THREE.Mesh(mergeGeo(bz), metal));
+    cockpit.add(new THREE.Mesh(Assets.mergeGeo(bz), metal));
     cptFx.bezels = 3;
 
     // コックピット内照明(輝度を抑えて金属面のブルーム発火を防ぐ)
@@ -1662,7 +1757,7 @@ const AsteroidRun = (()=>{
       fl.visible = false; fl.userData = {t:0, life:.12, on:false, s0:1, light:li};
       S.add(fl); P.flashes.push(fl);
     }
-    const shardGeo = deformRock(new THREE.IcosahedronGeometry(1, 0), 4242);
+    const shardGeo = Assets.deformRock(new THREE.IcosahedronGeometry(1, 0), 4242);
     for(let i = 0; i < SHARDS_PER_BOOM*4; i++){
       const m = new THREE.Mesh(shardGeo, rockMats[i%3]);
       m.visible = false;
@@ -2178,6 +2273,7 @@ const AsteroidRun = (()=>{
     return {playing, composer, bloom, bloomRes: BLOOM_RES, isTouch: IS_TOUCH,
       shields: st ? st.shields : -99,
       glitchActive: performance.now() < glitchUntil,
+      rocksFromAssets: rockGeos.length === 8 && rockGeos[0] === Assets.rockGeos()[0],
       rocks,
       fx: P ? {stats: fxStats, step: updateFx, shardsPerBoom: SHARDS_PER_BOOM,
         spawnTest: ()=>boom(new THREE.Vector3(0, 0, -60), 3, rockMats[0])} : null,
@@ -2515,6 +2611,8 @@ addEventListener('resize', ()=>{
   camera.aspect = innerWidth/innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  pageComposer.setSize(innerWidth, innerHeight);
+  if(pageBloom) pageBloom.setSize(innerWidth*.5, innerHeight*.5);
   if(activeGame === 'asteroid') AsteroidRun.resize();
   if(activeGame === 'signal') SignalGame.resize();
 });
@@ -2522,7 +2620,8 @@ addEventListener('resize', ()=>{
 loop();
 
 // テストハーネス用の公開フック(specs/00 §5)。ゲーム挙動には関与しない
-window.VG = {SoundEngine, AsteroidRun, SignalGame, Quality, openLayer, closeLayer};
+window.VG = {SoundEngine, AsteroidRun, SignalGame, Quality, openLayer, closeLayer,
+  Tl, Assets, isTouch: IS_TOUCH, pageFx: {composer: pageComposer, get bloom(){ return pageBloom; }}};
 </script>
 </body>
 </html>
