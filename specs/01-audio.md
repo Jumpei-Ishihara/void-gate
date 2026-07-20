@@ -109,5 +109,6 @@ const SoundEngine = (()=>{
 ## 5. リスク・備考
 
 - **iOS Safariの自動再生制限**: ensure() をタッチイベント同期内で呼ぶこと（非同期後だと失効）
-- suspend/resume の多用より、closeLayer では `stopAll()`＋suspend が安全
+- closeLayer では `stopAll()` のみ実行（実装では共有ctxのsuspendは使わず、
+  SIGNALのビート音はゲイン0で停止 — ゲーム間でctxを共有するため）
 - 合成音の質が想定に届かない場合の代替: CC0実録SEの同梱（SPEC-00 §4、+50〜200KB）
