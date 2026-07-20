@@ -1,8 +1,12 @@
 # VOID GATE — 深宇宙への入口
 
 宇宙 × 近未来をモチーフにしたインタラクティブWebサイト。
-Three.js (WebGL) によるフル3D背景の上で、スクロール＝ワープ航行、カーソル＝観測装置として
-ページ操作のすべてが宇宙空間に反映されます。HEROの2つのボタンからミニゲームを起動できます。
+サイト全体が**スクロールで三次元に展開する「出撃前ブリーフィング」**になっており、
+ページを下るだけで2つのミニゲームの遊び方が実物の3Dオブジェクトで説明されます。
+最終章のLAUNCH DECK（または冒頭のボタン）からゲームを起動できます。
+
+**章構成**: GATE(着任) → BRIEFING(任務概要) → FLIGHT(操縦) → WEAPONS(武装) →
+SURVIVAL(生存規定) → COMM(交信)+実通信 → NAVIGATION(航行宙域) → LAUNCH DECK(出撃)
 
 **▶ プレイする: https://jumpei-ishihara.github.io/void-gate/**
 
@@ -67,10 +71,10 @@ python3 -m http.server 8000
 
 ## テスト
 
-`tests/phase1.js`〜`phase4.js` に受け入れテスト全70項目。ゲームページのコンソールで実行します:
+`tests/phase1〜4.js`(ゲーム) + `tests/phaseA〜D.js`(ガイドサイト) に受け入れテスト計129項目。`tests/run-all.js` で一括実行できます:
 
 ```js
-fetch('tests/phase1.js').then(r=>r.text()).then(eval);   // 結果は window.__P1RESULTS
+fetch('tests/run-all.js').then(r=>r.text()).then(eval);   // 結果は window.__ALLRESULTS
 ```
 
 ## 使用技術・ライセンス

@@ -1,6 +1,6 @@
 # SPEC 07d — Phase D: SP最適化・アクセシビリティ・性能検証・最終回帰
 
-状態: **Draft** ／ 親: [SPEC-07](07-scroll-guide.md) ／ 前提: 07c Verified ／ 外部素材: 不要
+状態: **Implemented (2026-07-20 run-all 129テスト ALL GREEN。実機確認チェックリスト§5はユーザー実施待ち)** ／ 親: [SPEC-07](07-scroll-guide.md) ／ 前提: 07c Verified ／ 外部素材: 不要
 
 ## 1. 目的
 

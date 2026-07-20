@@ -69,19 +69,24 @@
   t('MIG-02 実通信化', ct.textContent.includes('LIVE UPLINK') && !!document.getElementById('send')
     && ct.offsetTop > document.getElementById('ch-comm').offsetTop);
 
-  // ---- 回帰: phaseA + phaseB(内部でphase1〜4も回る) ----
-  window.__SKIP_NESTED_REG = true;
-  for(const n of ['A','B']){
-    const src = await fetch(`/void-gate/tests/phase${n}.js?c=1`).then(r=>r.text());
-    await eval(src);
-    await new Promise(r=>setTimeout(r, 300));
+  // ---- 回帰: phaseA + phaseB(上位スイートが既に流している場合はスキップ) ----
+  const preset = !!window.__SKIP_NESTED_REG;
+  if(preset){
+    t('REG phaseA/B', true, 'skipped (上位スイートで実施)');
+  }else{
+    // Aはフル回帰(phase1〜4込み)、Bは入れ子回帰を抑止して重複を避ける
+    for(const n of ['A','B']){
+      if(n === 'B') window.__SKIP_NESTED_REG = true;
+      const src = await fetch(`/void-gate/tests/phase${n}.js?c=1`).then(r=>r.text());
+      await eval(src);
+      await new Promise(r=>setTimeout(r, 300));
+    }
+    delete window.__SKIP_NESTED_REG;
+    t('REG phaseA', window.__PARESULTS && window.__PARESULTS.every(x=>x.pass),
+      window.__PARESULTS ? window.__PARESULTS.filter(x=>!x.pass).map(x=>x.id).join(',') : 'none');
+    t('REG phaseB', window.__PBRESULTS && window.__PBRESULTS.every(x=>x.pass),
+      window.__PBRESULTS ? window.__PBRESULTS.filter(x=>!x.pass).map(x=>x.id).join(',') : 'none');
   }
-  t('REG phaseA', window.__PARESULTS && window.__PARESULTS.every(x=>x.pass),
-    window.__PARESULTS ? window.__PARESULTS.filter(x=>!x.pass).map(x=>x.id).join(',') : 'none');
-  t('REG phaseB', window.__PBRESULTS && window.__PBRESULTS.every(x=>x.pass),
-    window.__PBRESULTS ? window.__PBRESULTS.filter(x=>!x.pass).map(x=>x.id).join(',') : 'none');
-
-  delete window.__SKIP_NESTED_REG;
   window.__PCRESULTS = R;
   const ng = R.filter(x=>!x.pass);
   console.info(`[PhaseC] ${R.length-ng.length}/${R.length} pass`, ng.length?ng:'ALL GREEN');

@@ -413,6 +413,13 @@ body.no-cursor #cursor{
   .gview-pick .planet-chip{padding:8px 16px;font-size:10px}
   .gfs{margin-bottom:12px;font-size:10px}
   .gbtns{gap:12px}
+  /* SPEC-07d: SPの章レイアウト(下2/3テキスト・読解用グラデーション) */
+  .ch-pin{padding:0 6vw 6vh;justify-content:flex-end}
+  .ch-line{font-size:13.5px;line-height:2}
+  .ch-title{font-size:26px}
+  .chapter .ch-pin::after{content:"";position:absolute;left:0;right:0;bottom:0;height:55vh;z-index:-1;
+    background:linear-gradient(transparent,rgba(3,0,20,.72))}
+  .deck{flex-direction:column}
   .gfrags{font-size:10px;padding:6px 10px;min-height:26px}
 }
 @media (prefers-reduced-motion:reduce){
@@ -423,7 +430,7 @@ body.no-cursor #cursor{
 </head>
 <body>
 
-<canvas id="space"></canvas>
+<canvas id="space" aria-hidden="true"></canvas>
 <div class="scanlines"></div>
 <div class="hud-corner hud-tl"></div><div class="hud-corner hud-tr"></div>
 <div class="hud-corner hud-bl"></div><div class="hud-corner hud-br"></div>
@@ -464,7 +471,7 @@ body.no-cursor #cursor{
   <section class="chapter" id="ch-weapons"><div class="ch-pin"></div></section>
   <section class="chapter" id="ch-survival"><div class="ch-pin"></div></section>
   <section class="chapter" id="ch-comm"><div class="ch-pin"></div></section>
-  <div id="ch4-vign"></div>
+  <div id="ch4-vign" aria-hidden="true"></div>
 <!-- SPEC-07b: 訓練章(見出し/本文はJSのCOPYテーブルから注入 — 操作語のPC/SP出し分けのため) -->
   <section id="contact">
     <div class="reveal">
@@ -534,8 +541,8 @@ body.no-cursor #cursor{
 <footer>VOID GATE © 2026 — RENDERED WITH THREE.JS / ALL SIGNALS RESERVED</footer>
 
 <div id="game-layer">
-  <canvas id="game-canvas"></canvas>
-  <canvas id="wave-canvas"></canvas>
+  <canvas id="game-canvas" aria-hidden="true"></canvas>
+  <canvas id="wave-canvas" aria-hidden="true"></canvas>
   <div id="cockpit-vign"></div>
   <div id="game-hud"></div>
   <div id="game-overlay"></div>
@@ -823,9 +830,13 @@ function loop(){
 
   // ページブルームの予算監視(3秒超過で恒久OFF)
   pageMs += (dtP*1000 - pageMs)*.05;
-  if(pageBloom && pageBloom.enabled && pageMs > 12){
+  if(pageMs > 12){
     pageOver += dtP;
-    if(pageOver > 3){ pageBloom.enabled = false; console.info('[PageBloom] off (budget)'); }
+    if(pageOver > 3){
+      if(pageBloom && pageBloom.enabled){ pageBloom.enabled = false; console.info('[PageQuality] bloom off'); }
+      else if(nebula.visible){ nebula.visible = false; console.info('[PageQuality] nebula off'); }
+      pageOver = 0;
+    }
   }else pageOver = 0;
 
   // 星のきらめき + 各層パララックス
@@ -2368,6 +2379,8 @@ const Quality = (()=>{
 /* ---------- SPEC-07b: 訓練章 Guide(スクロール純関数駆動) ---------- */
 const Guide = (()=>{
   const defs = [], stages = {};
+  let redOverride = null;   // テスト用(D-03)。null=OSのprefers-reduced-motionに従う
+  const red = ()=>redOverride === null ? REDUCED : redOverride;
   const pick = (pc, sp)=>IS_TOUCH ? sp : pc;
   const sm = (v, a, b)=>{ const k = Math.min(1, Math.max(0, (v-a)/(b-a))); return k*k*(3-2*k); };
 
@@ -2432,7 +2445,8 @@ const Guide = (()=>{
   function buildFlight(){
     const g = new THREE.Group();
     const rocks = [], geos = Assets.rockGeos(), mats = Assets.rockMats();
-    for(let i = 0; i < 12; i++){
+    const NR = IS_TOUCH ? 8 : 12;   // SP軽量化(D-02)
+    for(let i = 0; i < NR; i++){
       const m = new THREE.Mesh(geos[i%8], mats[i%3]);
       m.userData.base = {x:(i%2 ? 1 : -1)*(6 + (i*2.3)%9), y:((i*1.7)%6) - 3, z:-10 - (i*4.1)%26, s:.8 + (i%4)*.4};
       m.scale.setScalar(m.userData.base.s);
@@ -2605,7 +2619,8 @@ const Guide = (()=>{
       d.t0 = el.offsetTop/max;
       d.t1 = Math.min(1, (el.offsetTop + el.offsetHeight - innerHeight)/max);
       const cam = Tl.camAt((d.t0 + d.t1)/2);
-      stages[d.id].group.position.set(cam.x, cam.y, cam.z - 26);
+      // SP縦画面は3D主役を上1/3の安全域へ(D-01)
+      stages[d.id].group.position.set(cam.x, cam.y + (IS_TOUCH ? 2.4 : 0), cam.z - 26);
     }
   }
   function setup(){
@@ -2622,6 +2637,15 @@ const Guide = (()=>{
       const lines = ()=>el.querySelectorAll('.ch-line');
       Tl.register({id, get t0(){ return d.t0; }, get t1(){ return d.t1; },
         update(tl){
+          if(red()){
+            // D-03: 静的縮退 — 章内では中間完成形を固定表示し、全行を即時点灯(欠落情報ゼロ)
+            const on = tl > 0 && tl < 1;
+            st.group.visible = on;
+            st.update(on ? .45 : 0);
+            lines().forEach(L=>L.classList.toggle('lit', on));
+            el.querySelector('.ch-head').classList.toggle('lit', on);
+            return;
+          }
           st.group.visible = tl > 0 && tl < 1;
           st.update(tl);
           lines().forEach(L=>L.classList.toggle('lit', tl >= +L.dataset.on));
@@ -2630,7 +2654,8 @@ const Guide = (()=>{
     }
     measure();
   }
-  return {setup, measure, info: ()=>defs.map(d=>({id:d.id, t0:d.t0, t1:d.t1})), stage: id=>stages[id]};
+  return {setup, measure, info: ()=>defs.map(d=>({id:d.id, t0:d.t0, t1:d.t1})), stage: id=>stages[id],
+    _forceReduced(v){ redOverride = v; }};
 })();
 
 /* ---------- GAME 2: SIGNAL TUNER(交信) ---------- */

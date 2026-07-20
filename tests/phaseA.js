@@ -71,6 +71,13 @@
   t('PERF ページ合成', per < 12, per.toFixed(1)+'ms/frame');
 
   // ---- 回帰(ゲーム) ----
+  if(window.__SKIP_NESTED_REG){
+    t('REG phase1〜4', true, 'skipped (上位スイートで実施)');
+    window.__PARESULTS = R;
+    console.info(`[PhaseA] ${R.length-R.filter(x=>!x.pass).length}/${R.length} pass (nested-reg skipped)`);
+    console.table(R);
+    return R;
+  }
   for(const n of [1,2,3,4]){
     const src = await fetch(`/void-gate/tests/phase${n}.js?a=1`).then(r=>r.text());
     await eval(src);
