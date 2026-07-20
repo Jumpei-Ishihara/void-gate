@@ -1107,6 +1107,9 @@ const AsteroidRun = (()=>{
   let lastFire = 0, noCoreUntil = 0;
   const rockGeos = [], rockMats = [];   // SPEC-03: 岩ジオメトリ/マテリアルの共有プール
   let shipFx = null, cptFx = null;      // SPEC-05: 機体/コックピット装飾の参照
+  let bgFx = null, motes = null;        // SPEC-06: 遠景/塵レイヤー
+  const MOTES_N = IS_TOUCH ? 300 : 600;
+  let shardsBudget = 0;                 // SPEC-06 PRF: 品質段階で可変(0=buildで初期化)
   let glitchUntil = 0;                  // SPEC-04 FX-06: 被弾時の計器グリッチ終了時刻
 
   // 岩の頂点変位(seed付き再現性): 大起伏(sin合成) + クレーター凹み(AST-01/02)
@@ -1297,6 +1300,30 @@ const AsteroidRun = (()=>{
     dGeo.setAttribute('position', new THREE.BufferAttribute(dp, 3));
     dust = new THREE.LineSegments(dGeo, new THREE.LineBasicMaterial({color:0x9fd4ff, transparent:true, opacity:.45, blending:THREE.AdditiveBlending, depthWrite:false}));
     S.add(dust);
+
+    // SPEC-06 BG: 遠景惑星(バイオレット系・フォグ対象外)+リング — 進行方向のランドマーク
+    const bgPlanet = new THREE.Mesh(new THREE.SphereGeometry(140, 28, 22),
+      new THREE.MeshStandardMaterial({color:0x5b46c8, emissive:0x180f40, roughness:.85, metalness:.1, fog:false}));
+    bgPlanet.position.set(-270, -70, -1370);
+    const bgRing = new THREE.Mesh(new THREE.RingGeometry(180, 262, 48),
+      new THREE.MeshBasicMaterial({color:0x8f7bff, transparent:true, opacity:.26, side:THREE.DoubleSide,
+        blending:THREE.AdditiveBlending, depthWrite:false, fog:false}));
+    bgRing.position.copy(bgPlanet.position);
+    bgRing.rotation.set(1.15, .3, 0);
+    S.add(bgPlanet, bgRing);
+    // 塵レイヤー: スピードラインより遅い層速度で視差を作る(BG-02)
+    const mGeo = new THREE.BufferGeometry();
+    const mp = new Float32Array(MOTES_N*3);
+    for(let i=0;i<MOTES_N;i++){
+      mp[i*3] = (Math.random()-.5)*240; mp[i*3+1] = (Math.random()-.5)*150; mp[i*3+2] = -50 - Math.random()*850;
+    }
+    mGeo.setAttribute('position', new THREE.BufferAttribute(mp, 3));
+    motes = new THREE.Points(mGeo, new THREE.PointsMaterial({size:.7, map:starTex, color:0xaac8ff,
+      transparent:true, opacity:.35, depthWrite:false, blending:THREE.AdditiveBlending}));
+    motes.frustumCulled = false;
+    S.add(motes);
+    bgFx = {planet: bgPlanet, ring: bgRing};
+    shardsBudget = SHARDS_PER_BOOM;
 
     buildFxPool();
     buildCockpit();
@@ -1669,7 +1696,7 @@ const AsteroidRun = (()=>{
     let n = 0;
     for(const sh of P.shards){
       if(sh.userData.on) continue;
-      if(++n > SHARDS_PER_BOOM) break;
+      if(++n > shardsBudget) break;
       sh.userData.on = true; sh.userData.t = 0;
       if(mat) sh.material = mat;   // 破壊した岩と同系の質感(FX-02)
       sh.position.copy(pos);
@@ -1916,6 +1943,7 @@ const AsteroidRun = (()=>{
     asts.forEach(m=>respawn(m, false));
     cores.forEach(m=>respawn(m, true));
     SoundEngine.engineStart();
+    Quality.reset();   // リトライごとに品質を再評価(セッション内は下がる一方, PRF-05)
     playing = true; last = performance.now();
     hud();
     cancelAnimationFrame(raf);
@@ -1963,7 +1991,9 @@ const AsteroidRun = (()=>{
     raf = requestAnimationFrame(loop);
     if(gpaused){ last = now; SoundEngine.enginePause(true); return; }   // 縦持ちガイド表示中は時間を進めない
     SoundEngine.enginePause(false);
-    const dt = Math.min(.05, (now-last)/1000); last = now;
+    const rawMs = now - last;
+    const dt = Math.min(.05, rawMs/1000); last = now;
+    Quality.frame(rawMs);   // SPEC-06 PRF: フレーム時間監視
 
     st.speed = Math.min(SPD_MAX, st.speed + dt*6);
     SoundEngine.engineSpeed(st.speed);
@@ -2060,6 +2090,14 @@ const AsteroidRun = (()=>{
     // 戦闘エフェクト更新(プール式, SPEC-04) + 装飾更新(SPEC-05)
     updateFx(dt);
     stepVisual(dt);
+    // 塵レイヤー(層速度0.6でスピードラインと視差, BG-02) + 遠景リング低速回転
+    if(motes){
+      const ma = motes.geometry.attributes.position.array;
+      const mv = st.speed*dt*.6;
+      for(let i=0;i<MOTES_N;i++){ ma[i*3+2] += mv; if(ma[i*3+2] > 20) ma[i*3+2] -= 900; }
+      motes.geometry.attributes.position.needsUpdate = true;
+    }
+    if(bgFx) bgFx.ring.rotation.z += dt*.01;
     // レティクルの色・透明度は常時固定(薄いシアン / opacity 0.12) — ロックは位置と拡縮のみで表現
 
     const dp = dust.geometry.attributes.position.array;
@@ -2090,6 +2128,17 @@ const AsteroidRun = (()=>{
     gameLayer.classList.remove('touch-fire');
   }
   function toggleSound(){ SoundEngine.toggleMute(); hud(); }
+  // SPEC-06 PRF: 品質段階の適用(0=full 1=bloom半解像度 2=+破片/塵半減 3=+bloomOFF)
+  function applyQuality(level){
+    if(!R) return;
+    if(bloom){
+      const rs = level >= 1 ? BLOOM_RES*.5 : BLOOM_RES;
+      bloom.setSize(innerWidth*rs, innerHeight*rs);
+      bloom.enabled = level < 3;
+    }
+    shardsBudget = level >= 2 ? Math.max(2, SHARDS_PER_BOOM >> 1) : SHARDS_PER_BOOM;
+    if(motes) motes.geometry.setDrawRange(0, level >= 2 ? MOTES_N/2 : MOTES_N);
+  }
   function debug(){
     const fxStats = ()=>({
       pool: {rings:P.rings.length, flashes:P.flashes.length, shards:P.shards.length,
@@ -2134,9 +2183,38 @@ const AsteroidRun = (()=>{
         lampPhasesDistinct: new Set(cptFx.lamps.map(l=>l.userData.ph)).size >= 3,
         alertOn: cptFx.alertLight.intensity > 0} : null,
       stRef: st, stepVisual,
+      bg: bgFx ? {planet: !!bgFx.planet, ring: !!bgFx.ring, fogOff: bgFx.planet.material.fog === false,
+        motes: MOTES_N} : null,
+      quality: {shardsBudget, bloomEnabled: bloom ? bloom.enabled !== false : null},
       testPickup: ()=>pickupCore(cores[0])};
   }
-  return {menu, stop, input, resize, toggleView, toggleLock, toggleSound, fire, debug};
+  return {menu, stop, input, resize, toggleView, toggleLock, toggleSound, fire, debug, applyQuality};
+})();
+
+/* ---------- SPEC-06 PRF: 性能自動調整(不可逆の段階縮退) ---------- */
+const Quality = (()=>{
+  let level = 0, avg = 10, overSince = 0;
+  const budget = IS_TOUCH ? 20 : 12;   // ms (SPEC-00 §2)
+  function frame(ms){
+    avg += (ms - avg)*.05;   // 移動平均(PRF-01)
+    const now = performance.now();
+    if(avg > budget){
+      if(!overSince) overSince = now;
+      if(now - overSince > 3000){ degrade(); overSince = 0; }   // 3秒継続で1段階(PRF-02/03)
+    }else overSince = 0;
+  }
+  function degrade(){
+    if(level >= 3) return;
+    level++;
+    AsteroidRun.applyQuality(level);
+    console.info('[Quality] degrade to level', level);   // PRF-04
+  }
+  function reset(){
+    level = IS_TOUCH ? 1 : 0;   // SPは既定でブルーム半解像度始まり
+    avg = budget*.6; overSince = 0;
+    AsteroidRun.applyQuality(level);
+  }
+  return {frame, reset, degrade, get level(){ return level; }};
 })();
 
 /* ---------- GAME 2: SIGNAL TUNER(交信) ---------- */
@@ -2147,6 +2225,8 @@ const SignalGame = (()=>{
   let raf = 0, playing = false, last = 0, frame = 0, st = null, ph = 0;
   let mx = .5, my = .35;
   let actx = null, oscP, oscT, gainP, gainT;   // SoundEngine共有ctx配下(AUD-10)
+  const pulses = [];                            // SIG-02: 同調成立パルス
+  let scanPat = null, vign = null;              // SIG-03: CRT走査線/周辺減光(resizeで生成)
 
   gameHud.addEventListener('click', e=>{
     if(!e.target.closest('#g-mute')) return;
@@ -2173,6 +2253,15 @@ const SignalGame = (()=>{
     waveCv.width = innerWidth*d;
     waveCv.height = innerHeight*d;
     g.setTransform(d, 0, 0, d, 0, 0);
+    // SIG-03: 走査線パターン(4px周期)と周辺減光を事前生成(毎フレームの生成コスト回避)
+    const pc = document.createElement('canvas'); pc.width = 4; pc.height = 4;
+    const pg = pc.getContext('2d');
+    pg.fillStyle = 'rgba(0,0,0,.55)'; pg.fillRect(0, 2, 4, 1);
+    scanPat = g.createPattern(pc, 'repeat');
+    vign = g.createRadialGradient(innerWidth/2, innerHeight/2, Math.min(innerWidth, innerHeight)*.42,
+      innerWidth/2, innerHeight/2, Math.max(innerWidth, innerHeight)*.72);
+    vign.addColorStop(0, 'rgba(0,0,0,0)');
+    vign.addColorStop(1, 'rgba(2,0,16,.5)');
   }
   function newTarget(){
     st.tf = 2.2 + Math.random()*6.5;
@@ -2219,13 +2308,27 @@ const SignalGame = (()=>{
       <div class="gscreen">
         <div class="gtitle"${win ? '' : ' style="text-shadow:0 0 30px rgba(255,46,196,.7)"'}>${win ? 'TRANSMISSION DECODED' : 'SIGNAL LOST'}</div>
         <p class="gdesc">${win ? '全チャンネル同調完了。解読されたメッセージ:' : `時間切れ — 同調できたのは ${st.locked} / 5 チャンネル`}</p>
-        ${win ? `<div class="gfrags" style="display:inline-block;margin-bottom:28px">${FRAGS.join(' ')}</div>` : ''}
+        ${win ? `<div class="gfrags" id="g-decode" data-decode="1" style="display:inline-block;margin-bottom:28px">&nbsp;</div>` : ''}
         <div class="gscore">SCORE ${score}<small> / BEST ${best}</small></div>
         <div class="gbtns"><a class="btn" id="g-retry">RETRY ▸</a><a class="btn magenta" id="g-quit">EXIT</a></div>
       </div>`;
     document.getElementById('g-retry').addEventListener('click', start);
     document.getElementById('g-quit').addEventListener('click', closeLayer);
     lockButtons();   // 連打クリックの貫通防止
+    if(win){
+      // SIG-04: 1文字ずつランダム文字→確定するデコード表示
+      const el = document.getElementById('g-decode');
+      const msg = FRAGS.join(' ');
+      const glyphs = 'アイウエオカキクケコサシスセソ01△▽◆#*';
+      let idx = 0;
+      const timer = setInterval(()=>{
+        if(!document.getElementById('g-decode')){ clearInterval(timer); return; }
+        idx++;
+        if(idx >= msg.length){ el.textContent = msg; clearInterval(timer); return; }
+        el.textContent = msg.slice(0, idx) +
+          Array.from({length: Math.min(6, msg.length-idx)}, ()=>glyphs[Math.random()*glyphs.length|0]).join('');
+      }, REDUCED ? 1 : 28);
+    }
   }
   function drawWave(w, mid, H, f, a, phk, jit){
     g.beginPath();
@@ -2260,6 +2363,7 @@ const SignalGame = (()=>{
     if(st.lockT >= LOCK_NEED){
       st.locked++;
       SoundEngine.ui('sync');
+      if(!REDUCED) pulses.push({t0: performance.now()});   // SIG-02
       st.frags.push(FRAGS[st.locked-1]);
       st.lockT = 0;
       st.tol = Math.max(.05, st.tol*.85);
@@ -2279,17 +2383,48 @@ const SignalGame = (()=>{
     g.stroke();
 
     const mid = h*.54, H = h*.3;
+    // SIG-01: 太い下引きグロー(2回描画方式 — shadowBlur依存を減らし負荷安定)
+    g.save();
+    g.strokeStyle = 'rgba(255,46,196,.16)'; g.lineWidth = 8;
+    g.setLineDash([10, 8]);
+    drawWave(w, mid, H, st.tf, st.ta, 1.3, 0);
+    g.restore();
+    g.save();
+    g.strokeStyle = 'rgba(0,240,255,.16)'; g.lineWidth = 9;
+    drawWave(w, mid, H, pf, pa, 1, matched ? 0 : Math.min(1, df+da)*26);
+    g.restore();
+
     g.save();
     g.setLineDash([10, 8]);
-    g.strokeStyle = 'rgba(255,46,196,.85)'; g.shadowColor = '#ff2ec4'; g.shadowBlur = 14; g.lineWidth = 2;
+    g.strokeStyle = 'rgba(255,46,196,.85)'; g.shadowColor = '#ff2ec4'; g.shadowBlur = 10; g.lineWidth = 2;
     drawWave(w, mid, H, st.tf, st.ta, 1.3, 0);
     g.restore();
 
     g.save();
     g.strokeStyle = matched ? '#7dffec' : 'rgba(0,240,255,.95)';
-    g.shadowColor = '#00f0ff'; g.shadowBlur = 16; g.lineWidth = 2.5;
+    g.shadowColor = '#00f0ff'; g.shadowBlur = 12; g.lineWidth = 2.5;
     drawWave(w, mid, H, pf, pa, 1, matched ? 0 : Math.min(1, df+da)*26);
     g.restore();
+
+    // SIG-02: 同調成立パルス(同心円3本+初期フラッシュ)
+    for(let i = pulses.length-1; i >= 0; i--){
+      const age = (performance.now() - pulses[i].t0)/600;
+      if(age >= 1){ pulses.splice(i, 1); continue; }
+      const maxR = Math.max(w, h)*.5;
+      g.save();
+      g.strokeStyle = `rgba(125,255,236,${(1-age)*.5})`;
+      g.lineWidth = 2.5;
+      for(let k = 0; k < 3; k++){
+        const rr = maxR*age*(1 - k*.18);
+        if(rr <= 0) continue;
+        g.beginPath(); g.arc(w/2, mid, rr, 0, Math.PI*2); g.stroke();
+      }
+      if(age < .08){ g.fillStyle = 'rgba(255,255,255,.16)'; g.fillRect(0, 0, w, h); }   // 擬似フラッシュ
+      g.restore();
+    }
+    // SIG-03: CRT走査線 + 周辺減光(判読性を保つ低alpha)
+    if(scanPat){ g.save(); g.globalAlpha = .35; g.fillStyle = scanPat; g.fillRect(0, 0, w, h); g.restore(); }
+    if(vign){ g.fillStyle = vign; g.fillRect(0, 0, w, h); }
 
     const bw = Math.min(280, w-80), bx = (w-bw)/2, by = w < 720 ? 176 : 30;   // 狭幅ではコンパクトHUDの直下へ
     g.fillStyle = 'rgba(255,255,255,.08)';
@@ -2305,7 +2440,15 @@ const SignalGame = (()=>{
   }
   function input(x, y){ mx = x/innerWidth; my = y/innerHeight; }
   function stop(){ playing = false; cancelAnimationFrame(raf); if(gainP){ gainP.gain.value = 0; gainT.gain.value = 0; } }
-  return {menu, stop, input, resize};
+  function debug(){
+    return {pulses: pulses.length, scanPat: !!scanPat,
+      testPulse: ()=>pulses.push({t0: performance.now()}),
+      agePulses: ms=>pulses.forEach(p=>p.t0 -= ms),
+      prune: ()=>{ const now = performance.now();
+        for(let i = pulses.length-1; i >= 0; i--) if(now - pulses[i].t0 >= 600) pulses.splice(i, 1); },
+      testEnd: end};
+  }
+  return {menu, stop, input, resize, debug};
 })();
 
 /* ---------- ゲーム起動の配線 ---------- */
@@ -2370,7 +2513,7 @@ addEventListener('resize', ()=>{
 loop();
 
 // テストハーネス用の公開フック(specs/00 §5)。ゲーム挙動には関与しない
-window.VG = {SoundEngine, AsteroidRun, SignalGame, openLayer, closeLayer};
+window.VG = {SoundEngine, AsteroidRun, SignalGame, Quality, openLayer, closeLayer};
 </script>
 </body>
 </html>
