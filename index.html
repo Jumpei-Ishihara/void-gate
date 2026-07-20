@@ -358,6 +358,24 @@ body.no-cursor #cursor{
   color:var(--magenta);text-shadow:0 0 12px rgba(255,46,196,.6);
   background:rgba(4,8,24,.55);border:1px solid rgba(255,46,196,.25);padding:8px 14px;min-height:32px}
 
+/* SPEC-07b: 訓練章(スクロール3D展開ガイド) */
+.chapter{position:relative;height:220vh}   /* sticky滞在=高さ-100vh=120vh(章の読了尺) */
+.ch-pin{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;justify-content:flex-end;
+  padding:0 8vw 12vh;pointer-events:none;max-width:820px}
+.ch-head{opacity:0;transform:translateY(14px);transition:.4s;margin-bottom:18px}
+.ch-head.lit{opacity:1;transform:none}
+.ch-num{font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:.35em;color:var(--cyan)}
+.ch-title{font-family:'Orbitron',sans-serif;font-size:clamp(28px,4.5vw,44px);font-weight:800;
+  letter-spacing:.12em;color:#fff;text-shadow:0 0 24px rgba(0,240,255,.4);margin-top:6px}
+.ch-sub{font-family:'Noto Sans JP',sans-serif;font-size:14px;font-weight:300;color:var(--dim);
+  letter-spacing:.2em;margin-left:14px}
+.ch-line{font-size:15px;font-weight:300;color:var(--text);line-height:2.2;letter-spacing:.05em;
+  opacity:0;transform:translateY(12px);transition:opacity .35s,transform .35s;margin-bottom:10px;
+  text-shadow:0 2px 12px rgba(3,0,20,.9)}
+.ch-line.lit{opacity:1;transform:none}
+#ch4-vign{position:fixed;inset:0;z-index:4;pointer-events:none;opacity:0;
+  background:radial-gradient(circle,transparent 30%,rgba(255,20,60,.55))}
+
 @media(max-width:720px){
   #game-overlay .gscreen{padding:38px 26px}
   .gtitle{font-size:24px}
@@ -508,6 +526,13 @@ body.no-cursor #cursor{
     </div>
   </section>
 </main>
+
+<!-- SPEC-07b: 訓練章(見出し/本文はJSのCOPYテーブルから注入 — 操作語のPC/SP出し分けのため) -->
+<section class="chapter" id="ch-flight"><div class="ch-pin"></div></section>
+<section class="chapter" id="ch-weapons"><div class="ch-pin"></div></section>
+<section class="chapter" id="ch-survival"><div class="ch-pin"></div></section>
+<section class="chapter" id="ch-comm"><div class="ch-pin"></div></section>
+<div id="ch4-vign"></div>
 
 <footer>VOID GATE © 2026 — RENDERED WITH THREE.JS / ALL SIGNALS RESERVED</footer>
 
@@ -2322,6 +2347,250 @@ const Quality = (()=>{
   return {frame, reset, degrade, get level(){ return level; }};
 })();
 
+
+/* ---------- SPEC-07b: 訓練章 Guide(スクロール純関数駆動) ---------- */
+const Guide = (()=>{
+  const defs = [], stages = {};
+  const pick = (pc, sp)=>IS_TOUCH ? sp : pc;
+  const sm = (v, a, b)=>{ const k = Math.min(1, Math.max(0, (v-a)/(b-a))); return k*k*(3-2*k); };
+
+  const COPY = {
+    flight: {num:'BRIEFING 02 / 07', title:'FLIGHT', sub:'操縦訓練', lines:[
+      [.25, ()=>`機体は${pick('マウス','指')}に追従する。画面の行きたい場所へ${pick('カーソルを運べ','指を滑らせろ')}。`],
+      [.55, ()=>'上下の機動は左右より機敏だ。縦の回避を恐れるな。'],
+      [.8,  ()=>'訓練空域を抜ける。次は武装の説明だ。']]},
+    weapons: {num:'BRIEFING 03 / 07', title:'WEAPONS', sub:'武装と資源', lines:[
+      [.05, ()=>'◆エネルギーコア。回収すればスコア×500。だが本当の価値は弾薬であることだ。'],
+      [.3,  ()=>`${pick('左クリック','FIREボタン')}で機関砲。コアを1つ消費し、正面の岩を撃ち砕く。`],
+      [.62, ()=>'照準は自動でロックする。囲まれたものは、壊せるものだ。'],
+      [.85, ()=>'空撃ちはコアを消費しない。残弾ゼロの警告「NO CORE」を見逃すな。']]},
+    survival: {num:'BRIEFING 04 / 07', title:'SURVIVAL', sub:'生存規定', lines:[
+      [.05, ()=>'シールドは3枚。衝突を3度だけ肩代わりする。'],
+      [.25, ()=>'砕けるたび、船体は裸に近づく。速度も20%失われる。'],
+      [.65, ()=>'シールド0 — 状態表示「CRITICAL」。赤色灯が回る。次の1発はない。'],
+      [.9,  ()=>'最大被弾は4回。それがこの宙域の規定だ。']]},
+    comm: {num:'BRIEFING 05 / 07', title:'COMM', sub:'交信訓練', lines:[
+      [.05, ()=>'未知の信号を受信している。交信には同調が要る。'],
+      [.3,  ()=>`${pick('マウス','指')}の横移動が周波数、縦移動が振幅。`],
+      [.45, ()=>'波形が重なったまま1.3秒 — それでチャンネルが開く。制限時間60秒で5チャンネル。'],
+      [.7,  ()=>'同調完了。向こう側の言葉が、ほどけていく。']]},
+  };
+
+  function fillDom(){
+    for(const id of Object.keys(COPY)){
+      const c = COPY[id];
+      document.querySelector('#ch-' + id + ' .ch-pin').innerHTML = `
+        <div class="ch-head"><span class="ch-num">${c.num}</span>
+          <h2 class="ch-title">${c.title}<span class="ch-sub">— ${c.sub}</span></h2></div>
+        ${c.lines.map(([on, fn])=>`<p class="ch-line" data-on="${on}">${fn()}</p>`).join('')}`;
+    }
+  }
+
+  // ---- 章02 FLIGHT: 岩帯進入 + 実物機体の入力追従デモ ----
+  function buildFlight(){
+    const g = new THREE.Group();
+    const rocks = [], geos = Assets.rockGeos(), mats = Assets.rockMats();
+    for(let i = 0; i < 12; i++){
+      const m = new THREE.Mesh(geos[i%8], mats[i%3]);
+      m.userData.base = {x:(i%2 ? 1 : -1)*(6 + (i*2.3)%9), y:((i*1.7)%6) - 3, z:-10 - (i*4.1)%26, s:.8 + (i%4)*.4};
+      m.scale.setScalar(m.userData.base.s);
+      rocks.push(m); g.add(m);
+    }
+    const shipB = Assets.buildShip();
+    shipB.group.scale.setScalar(0);
+    g.add(shipB.group);
+    return {group:g, rocks, ship:shipB.group,
+      update(tl){
+        for(const m of rocks){
+          const b = m.userData.base;
+          m.position.set(b.x, b.y, b.z + tl*46);
+          m.rotation.y = tl*2 + b.x; m.rotation.x = tl*1.2 + b.y;
+        }
+        const app = sm(tl, .2, .38)*(1 - sm(tl, .82, 1));
+        this.ship.scale.setScalar(app*1.1);
+        this.ship.position.set(mouse.x*2.6, -mouse.y*1.8 - .5, -8);   // ライブデモ(入力連動の意図的例外)
+        this.ship.rotation.z = -mouse.x*.5;
+        this.ship.rotation.x = sm(tl, .55, .8)*Math.sin(tl*18)*.35 - mouse.y*.3;
+      }};
+  }
+  // ---- 章03 WEAPONS: コア接近 → トレーサー → 三層爆発(全てtl純関数) ----
+  function buildWeapons(){
+    const g = new THREE.Group();
+    const core = Assets.buildCore(); core.scale.setScalar(.55); g.add(core);
+    const target = new THREE.Mesh(Assets.rockGeos()[3], Assets.rockMats()[0]);
+    target.position.set(5.5, 1.2, -10); g.add(target);
+    const trGeo = new THREE.CylinderGeometry(.05, .05, 1, 5, 1, true);
+    const tracers = [0, 1].map(()=>{
+      const m = new THREE.Mesh(trGeo, new THREE.MeshBasicMaterial({color:0x66f6ff,
+        transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false}));
+      m.visible = false; g.add(m); return m;
+    });
+    const shards = [], shGeo = Assets.deformRock(new THREE.IcosahedronGeometry(1, 0), 777);
+    for(let i = 0; i < 6; i++){
+      const m = new THREE.Mesh(shGeo, Assets.rockMats()[0]);
+      m.userData.dir = new THREE.Vector3(Math.sin(i*2.4), Math.cos(i*1.9), Math.sin(i*3.1)).normalize();
+      m.visible = false; g.add(m); shards.push(m);
+    }
+    const flash = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0xffe3b8,
+      transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false}));
+    flash.visible = false; g.add(flash);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1, 1.14, 26),
+      new THREE.MeshBasicMaterial({color:0x9fe8ff, transparent:true, opacity:0,
+        side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false}));
+    ring.visible = false; g.add(ring);
+    return {group:g, core, target, tracers, shards, flash, ring, _prev:0,
+      update(tl){
+        core.position.z = -40 + 34*Math.min(1, tl/.3);
+        core.userData.ring1.rotation.y = tl*9;
+        core.userData.ring2.rotation.x = -tl*6;
+        target.visible = tl >= .28 && tl < .62;
+        if(target.visible) target.scale.setScalar(sm(tl, .28, .45)*1.4);
+        const tk = (tl - .5)/.12;
+        for(let i = 0; i < 2; i++){
+          const m = tracers[i];
+          m.visible = tk > 0 && tk < 1;
+          if(m.visible){
+            const from = new THREE.Vector3(i ? 2 : -2, -3.5, 0);
+            const dir = target.position.clone().sub(from);
+            m.position.copy(from).addScaledVector(dir, .5);
+            m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+            m.scale.set(1, dir.length(), 1);
+            m.material.opacity = .8*(1 - tk);
+          }
+        }
+        const e = (tl - .62)/.23;
+        flash.visible = e > 0 && e < .3;
+        if(flash.visible){ flash.position.copy(target.position); flash.scale.setScalar(4 + e*8); flash.material.opacity = .95*(1 - e/.3); }
+        ring.visible = e > 0 && e < 1;
+        if(ring.visible){ ring.position.copy(target.position); ring.scale.setScalar(1 + e*10); ring.material.opacity = .6*(1 - e); }
+        for(const m of shards){
+          m.visible = e > 0 && e < 1;
+          if(m.visible){
+            m.position.copy(target.position).addScaledVector(m.userData.dir, e*9);
+            m.scale.setScalar(.4*(1 - e*.7));
+            m.rotation.set(e*7 + m.userData.dir.x, e*9, e*5);
+          }
+        }
+        if(this._prev < .62 && tl >= .62) SoundEngine.explosion(2);   // B-06: 上向きエッジのみ発音
+        this._prev = tl;
+      }};
+  }
+  // ---- 章04 SURVIVAL: シールド段階破壊 + CRITICAL警告 ----
+  function buildSurvival(){
+    const g = new THREE.Group();
+    const shGeo = new THREE.OctahedronGeometry(1.4);
+    const shields = [0, 1, 2].map(i=>{
+      const m = new THREE.Mesh(shGeo, new THREE.MeshBasicMaterial({color:0x00f0ff,
+        transparent:true, opacity:.6, blending:THREE.AdditiveBlending, depthWrite:false}));
+      m.position.set((i-1)*4.2, 0, -10);
+      m.scale.set(1, 1.3, .35);
+      g.add(m); return m;
+    });
+    const frags = [];
+    for(let i = 0; i < 12; i++){
+      const m = new THREE.Mesh(new THREE.TetrahedronGeometry(.35),
+        new THREE.MeshBasicMaterial({color:0x00f0ff, transparent:true, opacity:0,
+          blending:THREE.AdditiveBlending, depthWrite:false}));
+      m.visible = false; g.add(m); frags.push(m);
+    }
+    const TH = [.3, .45, .6];
+    return {group:g, shields, frags, vign: document.getElementById('ch4-vign'), _prev:0,
+      update(tl){
+        shields.forEach((m, i)=>{
+          m.visible = tl < TH[i];
+          if(m.visible){ m.rotation.y = tl*3 + i; m.material.opacity = .4 + .25*Math.sin(tl*20 + i*2); }
+          for(let j = 0; j < 4; j++){
+            const f = frags[i*4 + j], k = (tl - TH[i])/.15;
+            f.visible = k > 0 && k < 1;
+            if(f.visible){
+              f.position.set((i-1)*4.2 + Math.sin(j*2.6)*k*6, Math.cos(j*1.8)*k*5, -10 + k*3);
+              f.material.opacity = .8*(1 - k);
+              f.rotation.set(k*8 + j, k*6, 0);
+            }
+          }
+        });
+        const warn = sm(tl, .65, .78)*(1 - sm(tl, .9, 1));
+        const blink = REDUCED ? 1 : (.7 + .3*Math.sin(tl*46));   // tl駆動明滅(B-05)
+        this.vign.style.opacity = (warn*blink).toFixed(3);
+        for(let i = 0; i < 3; i++)
+          if(this._prev < TH[i] && tl >= TH[i]) SoundEngine.impact(i === 2);
+        this._prev = tl;
+      }};
+  }
+  // ---- 章05 COMM: 3D波形リボンの同調デモ ----
+  function buildComm(){
+    const g = new THREE.Group();
+    const N = IS_TOUCH ? 60 : 120;
+    const mkLine = color=>{
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N*3), 3));
+      const l = new THREE.Line(geo, new THREE.LineBasicMaterial({color, transparent:true, opacity:.9,
+        blending:THREE.AdditiveBlending}));
+      l.frustumCulled = false; g.add(l); return l;
+    };
+    const target = mkLine(0xff2ec4), player = mkLine(0x00f0ff);
+    const pulse = new THREE.Mesh(new THREE.RingGeometry(1, 1.1, 32),
+      new THREE.MeshBasicMaterial({color:0x7dffec, transparent:true, opacity:0,
+        side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false}));
+    pulse.visible = false; g.add(pulse);
+    const TF = 1.15, TA = 2.2;
+    return {group:g, target, player, pulse, N, _prev:0,
+      update(tl){
+        const conv = sm(tl, .3, .7);
+        const pf = 2.1 + (TF - 2.1)*conv, pa = .9 + (TA - .9)*conv;
+        const tp = target.geometry.attributes.position, pp = player.geometry.attributes.position;
+        for(let i = 0; i < N; i++){
+          const x = (i/(N-1) - .5)*26;
+          tp.setXYZ(i, x, Math.sin(x*TF*.5 + tl*6)*TA, -10);
+          const jit = (1 - conv)*Math.sin(i*7.3 + tl*40)*.5;
+          pp.setXYZ(i, x, Math.sin(x*pf*.5 + tl*6)*pa + jit, -9.6);
+        }
+        tp.needsUpdate = true; pp.needsUpdate = true;
+        const pk = (tl - .7)/.15;
+        pulse.visible = pk > 0 && pk < 1;
+        if(pulse.visible){ pulse.position.set(0, 0, -10); pulse.scale.setScalar(1 + pk*16); pulse.material.opacity = .6*(1 - pk); }
+        if(this._prev < .7 && tl >= .7) SoundEngine.ui('sync');
+        this._prev = tl;
+      }};
+  }
+
+  // 章のt範囲はDOM実測から導出(レイアウト変更に自動追従) + ステージをカメラ通過位置へ配置
+  function measure(){
+    const max = document.documentElement.scrollHeight - innerHeight;
+    if(max <= 0) return;
+    for(const d of defs){
+      const el = document.getElementById('ch-' + d.id);
+      d.t0 = el.offsetTop/max;
+      d.t1 = Math.min(1, (el.offsetTop + el.offsetHeight - innerHeight)/max);
+      const cam = Tl.camAt((d.t0 + d.t1)/2);
+      stages[d.id].group.position.set(cam.x, cam.y, cam.z - 26);
+    }
+  }
+  function setup(){
+    fillDom();
+    const builders = {flight:buildFlight, weapons:buildWeapons, survival:buildSurvival, comm:buildComm};
+    for(const id of Object.keys(builders)){
+      const st = builders[id]();
+      st.group.visible = false;
+      scene.add(st.group);
+      stages[id] = st;
+      const d = {id, t0:0, t1:1};
+      defs.push(d);
+      const el = document.getElementById('ch-' + id);
+      const lines = ()=>el.querySelectorAll('.ch-line');
+      Tl.register({id, get t0(){ return d.t0; }, get t1(){ return d.t1; },
+        update(tl){
+          st.group.visible = tl > 0 && tl < 1;
+          st.update(tl);
+          lines().forEach(L=>L.classList.toggle('lit', tl >= +L.dataset.on));
+          el.querySelector('.ch-head').classList.toggle('lit', tl >= .02 && tl < 1);
+        }});
+    }
+    measure();
+  }
+  return {setup, measure, info: ()=>defs.map(d=>({id:d.id, t0:d.t0, t1:d.t1})), stage: id=>stages[id]};
+})();
+
 /* ---------- GAME 2: SIGNAL TUNER(交信) ---------- */
 const SignalGame = (()=>{
   const g = waveCv.getContext('2d');
@@ -2613,15 +2882,18 @@ addEventListener('resize', ()=>{
   renderer.setSize(innerWidth, innerHeight);
   pageComposer.setSize(innerWidth, innerHeight);
   if(pageBloom) pageBloom.setSize(innerWidth*.5, innerHeight*.5);
+  Guide.measure();
   if(activeGame === 'asteroid') AsteroidRun.resize();
   if(activeGame === 'signal') SignalGame.resize();
 });
 
+Guide.setup();   // SPEC-07b: 訓練章の構築(全ステージ初期構築, PER-02)
 loop();
 
 // テストハーネス用の公開フック(specs/00 §5)。ゲーム挙動には関与しない
 window.VG = {SoundEngine, AsteroidRun, SignalGame, Quality, openLayer, closeLayer,
-  Tl, Assets, isTouch: IS_TOUCH, pageFx: {composer: pageComposer, get bloom(){ return pageBloom; }}};
+  Tl, Assets, Guide, pageMouse: mouse, isTouch: IS_TOUCH,
+  pageFx: {composer: pageComposer, get bloom(){ return pageBloom; }}};
 </script>
 </body>
 </html>

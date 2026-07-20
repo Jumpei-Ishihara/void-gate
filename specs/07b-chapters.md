@@ -1,6 +1,6 @@
 # SPEC 07b — Phase B: 訓練章コンテンツ（02 FLIGHT / 03 WEAPONS / 04 SURVIVAL / 05 COMM）
 
-状態: **Draft** ／ 親: [SPEC-07](07-scroll-guide.md) ／ 前提: 07a Verified ／ 外部素材: 不要
+状態: **Implemented (2026-07-20 テスト21/21グリーン・ゲーム回帰込み。目視確認はデプロイ後の実ブラウザレビューで実施 — 検証環境がゼロビューポート状態のため)** ／ 親: [SPEC-07](07-scroll-guide.md) ／ 前提: 07a Verified ／ 外部素材: 不要
 
 ## 1. 目的
 
