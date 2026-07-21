@@ -25,6 +25,7 @@
 | 07b | └ 訓練章 02〜05（コピー全文含む） | 5-B | Implemented |
 | 07c | └ 導入/出口章・HUD/コピー統一 | 5-C | Implemented |
 | 07d | └ SP・アクセシビリティ・性能・最終回帰 | 5-D | Implemented |
+| 08 | 連続アクションシークエンス化＋SIGNAL TUNER撤去 | 6 | Draft |
 
 ## 1. 共通制約（全SPECに適用）
 
