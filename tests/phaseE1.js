@@ -36,7 +36,7 @@
   // ---- ガイド章: comm章が消えて4章(briefing+3訓練章) ----
   const ids = V.Guide.info().map(d=>d.id);
   t('GUIDE 章構成', ids.length === 4 && !ids.includes('comm')
-    && ['briefing','flight','weapons','survival'].every(id=>ids.includes(id)), ids.join(','));
+    && ['sortie','flight','weapons','survival'].every(id=>ids.includes(id)), ids.join(','));   // E3でbriefing→sortie
 
   // ---- ゲーム動作サニティ(ASTEROID RUN 無傷) ----
   document.getElementById('deck-explore').click();

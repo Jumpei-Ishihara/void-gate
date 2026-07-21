@@ -1,6 +1,6 @@
 # SPEC 08c — Phase E3: SORTIE/CLEARANCE/LAUNCH DECK・総仕上げ
 
-状態: **Draft** ／ 親: [SPEC-08](08-action-sequence.md) ／ 前提: 08b Verified ／ 外部素材: 不要
+状態: **Verified (2026-07-20 phaseE3 7/7・最終run-all 145テスト ALL GREEN。惑星は既存planetGroupの位置昇格で実装)** ／ 親: [SPEC-08](08-action-sequence.md) ／ 前提: 08b Verified ／ 外部素材: 不要
 
 ## 1. 目的
 

@@ -373,7 +373,8 @@ body.no-cursor #cursor{
 #quickref .card td:first-child{color:var(--dim);white-space:nowrap;letter-spacing:.08em}
 
 /* SPEC-07b: 訓練章(スクロール3D展開ガイド) */
-.chapter{position:relative;height:220vh}   /* sticky滞在=高さ-100vh=120vh(章の読了尺) */
+.chapter{position:relative;height:240vh}   /* sticky滞在=高さ-100vh(章の読了尺) */
+#ch-sortie{height:170vh}   /* 凍結なし章は短め(SPEC-08c E3-06) */
 .ch-pin{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;justify-content:flex-end;
   padding:0 8vw 12vh;pointer-events:none;max-width:820px}
 .ch-head{opacity:0;transform:translateY(14px);transition:.4s;margin-bottom:18px}
@@ -466,7 +467,7 @@ body.no-cursor #cursor{
     <div class="scroll-cue">▼ 発進シークエンス開始</div>
   </section>
 
-  <section class="chapter" id="ch-briefing"><div class="ch-pin"></div></section>
+  <section class="chapter" id="ch-sortie"><div class="ch-pin"></div></section>
   <section class="chapter" id="ch-flight"><div class="ch-pin"></div></section>
   <section class="chapter" id="ch-weapons"><div class="ch-pin"></div></section>
   <section class="chapter" id="ch-survival"><div class="ch-pin"></div></section>
@@ -474,9 +475,9 @@ body.no-cursor #cursor{
 <!-- SPEC-07b: 訓練章(見出し/本文はJSのCOPYテーブルから注入 — 操作語のPC/SP出し分けのため) -->
   <section id="gallery">
     <div class="reveal">
-      <div class="sec-tag">BRIEFING 05 / 06 — NAVIGATION</div>
-      <h2>航行宙域の選択</h2>
-      <p class="lead">操作が世界に届くことを確かめる最終訓練だ。宙域チップを選べ — 背景の惑星が即座に応答する。</p>
+      <div class="sec-tag">CLEARANCE 05 / 06 — 帯を抜ける</div>
+      <h2>帯を抜けた。宙域を選べ。</h2>
+      <p class="lead">視界が開ける。正面の惑星が次の航行宙域だ — チップを選べば、世界が即座に応答する。</p>
       <div class="planet-ui">
         <div class="planet-chip active" data-planet="aqua">AQUA-7</div>
         <div class="planet-chip" data-planet="ember">EMBER-3</div>
@@ -491,8 +492,8 @@ body.no-cursor #cursor{
   <section id="ch-launch">
     <div class="reveal">
       <div class="sec-tag">LAUNCH DECK 06 / 06 — 出撃甲板</div>
-      <h2>出撃せよ。</h2>
-      <p class="lead">訓練修了。2つの任務が発進口で待っている。ベスト記録はこの端末に保存される。</p>
+      <h2>次はお前が飛ぶ番だ。</h2>
+      <p class="lead">訓練修了。発進口は開いている。ベスト記録はこの端末に保存される。</p>
       <div class="deck">
         <div class="deck-bay">
           <div class="deck-name">ASTEROID RUN</div>
@@ -744,11 +745,11 @@ addEventListener('scroll', ()=>{
 // SPEC-07c: HUDの章表記(セクション実位置と連動, GDE-06)
 const SECTORS = [
   ['hero',        'GATE 00 / 06 — 着任確認'],
-  ['ch-briefing', 'BRIEFING 01 / 06 — 任務概要'],
+  ['ch-sortie',   'SORTIE 01 / 06 — 出撃'],
   ['ch-flight',   'BRIEFING 02 / 06 — 操縦訓練'],
   ['ch-weapons',  'BRIEFING 03 / 06 — 武装と資源'],
   ['ch-survival', 'BRIEFING 04 / 06 — 生存規定'],
-  ['gallery',     'BRIEFING 05 / 06 — 航行宙域'],
+  ['gallery',     'CLEARANCE 05 / 06 — 帯を抜ける'],
   ['ch-launch',   'LAUNCH DECK 06 / 06 — 出撃準備完了'],
 ];
 function updateSector(){
@@ -2412,9 +2413,12 @@ const Guide = (()=>{
     sortie.ship.rotation.set(my*.4, 0, sp.roll - mx*.5);
     const ex = .9 + Math.sin(t*46)*.08;   // 排気の脈動(t純関数)
     sortie.parts.exhaust.forEach(e=>e.scale.set(.9, 1.6*ex, 1));
+    const clear = sortie.clear ? sm(t, sortie.clear.a, sortie.clear.b) : 0;   // 帯を抜ける(E3-03)
     for(const m of sortie.rocks){   // 自転もtの純関数(逆再生対応)
       m.rotation.y = m.userData.u.a + t*m.userData.u.sp*4;
       m.rotation.x = m.userData.u.a*.7 + t*m.userData.u.sp*3;
+      m.scale.setScalar(m.userData.u.s*(1 - clear));
+      m.visible = clear < .98;
     }
   }
   // フリーズ演出の集約(E2-05): 全章の凍結深度の最大値で減彩+バッジ+カメラ寄り
@@ -2446,9 +2450,10 @@ const Guide = (()=>{
   const sm = (v, a, b)=>{ const k = Math.min(1, Math.max(0, (v-a)/(b-a))); return k*k*(3-2*k); };
 
   const COPY = {
-    briefing: {num:'BRIEFING 01 / 06', title:'BRIEFING', sub:'任務概要', lines:[
-      [.2,  ()=>'任務はひとつ。小惑星帯を突破する探査任務 — ASTEROID RUN。'],
-      [.5,  ()=>'装備と規定を順に説明する。まずは操縦訓練からだ。']]},
+    sortie: {num:'SORTIE 01 / 06', title:'SORTIE', sub:'出撃', lines:[
+      [.25, ()=>'射出確認。ここから先、スクロールはお前の推進力だ。'],
+      [.55, ()=>'任務はひとつ — 小惑星帯を突破する探査任務、ASTEROID RUN。'],
+      [.8,  ()=>'岩帯まで20秒。訓練を始める。']]},
     flight: {num:'BRIEFING 02 / 06', title:'FLIGHT', sub:'操縦訓練', lines:[
       [.46, ()=>`機体は${pick('マウス','指')}に追従する。画面の行きたい場所へ${pick('カーソルを運べ','指を滑らせろ')}。`],
       [.52, ()=>'上下の機動は左右より機敏だ。縦の回避を恐れるな。'],
@@ -2475,26 +2480,10 @@ const Guide = (()=>{
     }
   }
 
-  // ---- 章01 BRIEFING: 2任務のホログラム予告 ----
-  function buildBriefing(){
+  // ---- 章01 SORTIE: 射出(機体接近はSHIPキーフレーム、道具なし E3-02) ----
+  function buildSortieCh(){
     const g = new THREE.Group();
-    const holoRock = new THREE.Mesh(Assets.rockGeos()[1],
-      new THREE.MeshBasicMaterial({color:0x00f0ff, wireframe:true, transparent:true, opacity:.4,
-        blending:THREE.AdditiveBlending, depthWrite:false}));
-    holoRock.position.set(-5.5, 0, -10); holoRock.scale.setScalar(1.6);
-    const holoWave = new THREE.Mesh(new THREE.TorusGeometry(2.2, .05, 8, 40),
-      new THREE.MeshBasicMaterial({color:0xff2ec4, wireframe:true, transparent:true, opacity:.4,
-        blending:THREE.AdditiveBlending, depthWrite:false}));
-    holoWave.position.set(5.5, 0, -10);
-    g.add(holoRock, holoWave);
-    return {group:g, holoRock, holoWave,
-      update(tl){
-        const app = sm(tl, .05, .3)*(1 - sm(tl, .85, 1));
-        holoRock.material.opacity = .4*app*(0.85 + .15*Math.sin(tl*60));   // ホログラム明滅(tl駆動)
-        holoWave.material.opacity = .4*app*(0.85 + .15*Math.sin(tl*52 + 2));
-        holoRock.rotation.y = tl*4; holoRock.position.y = Math.sin(tl*6.3)*.5;
-        holoWave.rotation.y = tl*3; holoWave.rotation.x = .4 + tl*2; holoWave.position.y = Math.sin(tl*6.3 + 3)*.5;
-      }};
+    return {group:g, update(){}};
   }
   // ---- 章02 FLIGHT: 大岩を横転回避 → 交差の瞬間で凍結(SPEC-08b) ----
   function buildFlight(){
@@ -2688,22 +2677,36 @@ const Guide = (()=>{
       const u = m.userData.u;
       m.position.set(Math.cos(u.a)*u.r, Math.sin(u.a)*u.r*.5, z0 + (z1 - z0)*(i + .5)/sortie.rocks.length);
     });
-    // SHIPキーフレーム: フリーズ章のイベント点で機体姿勢を寄せる(E2-04)
+    // SHIPキーフレーム: GATEシルエット→SORTIE射出→イベント点→帰投(E3-01/02/04)
     const ev = id=>{ const d = defs.find(x=>x.id === id); const st = stages[id];
       return d && st && st.fz ? d.t0 + (d.t1 - d.t0)*st.fz.f0 : null; };
+    const so = defs.find(x=>x.id === 'sortie');
     const tF = ev('flight'), tW = ev('weapons'), tS = ev('survival');
-    sortie.SHIP = [{t:0, x:0, y:-1, dz:-16, roll:0}];
+    sortie.SHIP = [{t:0, x:.4, y:-.4, dz:-58, roll:0}];   // GATE: 遠方シルエット
+    if(so){
+      sortie.SHIP.push({t:so.t0 + (so.t1 - so.t0)*.1, x:.4, y:-.4, dz:-55, roll:0});
+      sortie.SHIP.push({t:so.t0 + (so.t1 - so.t0)*.55, x:0, y:-.9, dz:-17, roll:0});   // 射出加速
+    }
     if(tF) sortie.SHIP.push({t:tF, x:1.4, y:-.7, dz:-15, roll:-.55});
     if(tW) sortie.SHIP.push({t:tW, x:-.2, y:-.9, dz:-15, roll:0});
     if(tS) sortie.SHIP.push({t:tS, x:-.5, y:-.6, dz:-13, roll:.25});
-    sortie.SHIP.push({t:1, x:0, y:-1, dz:-16, roll:0});
+    sortie.SHIP.push({t:.96, x:0, y:-1, dz:-17, roll:0});
+    sortie.SHIP.push({t:1, x:0, y:.4, dz:-30, roll:0});   // 帰投: ベイへ離脱(E3-04)
     sortie.SHIP.sort((a, b)=>a.t - b.t);
+    // CLEARANCE: 岩帯の減衰区間 + 惑星をコース正面へ昇格(E3-03)
+    const gal = document.getElementById('gallery');
+    if(gal){
+      const g0 = gal.offsetTop/max, g1 = Math.min(1, (gal.offsetTop + gal.offsetHeight)/max);
+      sortie.clear = {a: Math.max(0, g0 - .06), b: (g0 + g1)/2};
+      planetGroup.position.x = 6;
+      planetGroup.position.z = Tl.camAt((g0 + g1)/2).z - 72;
+    }
   }
   function setup(){
     fillDom();
     buildSortie();
     Tl.register({id:'_sortie', t0:0, t1:1, update: updateSortie});   // 最初=機体の基準姿勢
-    const builders = {briefing:buildBriefing, flight:buildFlight, weapons:buildWeapons, survival:buildSurvival};
+    const builders = {sortie:buildSortieCh, flight:buildFlight, weapons:buildWeapons, survival:buildSurvival};
     for(const id of Object.keys(builders)){
       const st = builders[id]();
       st.group.visible = false;

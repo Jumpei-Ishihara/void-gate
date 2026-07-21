@@ -7,24 +7,20 @@
   if(!V){ window.__PCRESULTS = R; console.table(R); return R; }
 
   // ---- 構成(C-01/07): 章の順序と旧セクション廃止 ----
-  const order = ['hero','ch-briefing','ch-flight','ch-weapons','ch-survival','gallery','ch-launch','contact'];
+  const order = ['hero','ch-sortie','ch-flight','ch-weapons','ch-survival','gallery','ch-launch','contact'];
   const tops = order.map(id=>{ const el = document.getElementById(id); return el ? el.offsetTop : -1; });
   t('C-01 全章存在', tops.every(v=>v >= 0), JSON.stringify(tops));
   t('C-01b 章順序', tops.every((v,i)=>i === 0 || v >= tops[i-1]), tops.join('<'));
   t('C-07 旧セクション廃止', !document.getElementById('mission') && !document.getElementById('tech'));
   t('C-01c GATEボタン残置', !!document.getElementById('btn-explore'));   // CONTACT CTAはSPEC-08aで撤去
 
-  // ---- BRIEFING章(C-02) ----
+  // ---- SORTIE章(SPEC-08cでBRIEFINGから改称・射出化) ----
   const info = V.Guide.info();
-  t('C-02 briefing登録', info.length === 4 && info[0].id === 'briefing', info.map(d=>d.id).join(','));
-  const b = info[0], Sb = V.Guide.stage('briefing');
-  V.Tl._setT(b.t0 + (b.t1-b.t0)*.5); V.Tl.update(.016);
-  t('C-02b ホログラム表示', Sb.group.visible && Sb.holoRock.material.opacity > .1 && Sb.holoWave.material.opacity > .1);
-  V.Tl._setT(0); V.Tl.update(.016);
+  t('C-02 sortie登録', info.length === 4 && info[0].id === 'sortie', info.map(d=>d.id).join(','));
 
   // ---- NAVIGATION(C-03) ----
   const gal = document.getElementById('gallery').textContent;
-  t('C-03 NAVIGATION再文脈化', gal.includes('NAVIGATION') && gal.includes('航行宙域')
+  t('C-03 CLEARANCE化', gal.includes('CLEARANCE')
     && document.querySelectorAll('#gallery .planet-chip').length === 3);
 
   // ---- LAUNCH DECK(C-04) ----

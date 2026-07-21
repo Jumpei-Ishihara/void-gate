@@ -5,8 +5,13 @@
 ページを下るだけでミニゲーム ASTEROID RUN の遊び方が実物の3Dオブジェクトで説明されます。
 最終章のLAUNCH DECK（または冒頭のボタン）からゲームを起動できます。
 
-**章構成**: GATE(着任) → BRIEFING(任務概要) → FLIGHT(操縦) → WEAPONS(武装) →
-SURVIVAL(生存規定) → NAVIGATION(航行宙域) → LAUNCH DECK(出撃) + 通信ターミナル
+**章構成（一本の出撃飛行）**: GATE(着任) → SORTIE(射出) → FLIGHT(回避で凍結→操縦説明) →
+WEAPONS(着弾閃光で凍結→機関砲説明) → SURVIVAL(激突の瞬間で凍結→シールド説明) →
+CLEARANCE(帯を抜け宙域選択) → LAUNCH DECK(出撃) + 通信ターミナル
+
+説明は**アクションの決定的瞬間で時間が凍結する「フリーズビート」**として挿入されます。
+読み終えてスクロールを進めると時間が再開し、結末（爆発の完了・シールド砕散）が再生されます。
+逆スクロールではすべてが逆再生されます。
 
 **▶ プレイする: https://jumpei-ishihara.github.io/void-gate/**
 
