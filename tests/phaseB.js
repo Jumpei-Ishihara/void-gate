@@ -10,8 +10,8 @@
   if(!G){ window.__PBRESULTS = R; console.table(R); return R; }
 
   const info = G.info();
-  t('B-01 4章登録', info.length >= 4 && ['flight','weapons','survival','comm'].every(id=>info.find(c=>c.id === id)),
-    info.map(c=>c.id).join(','));
+  t('B-01 訓練章登録', ['flight','weapons','survival'].every(id=>info.find(c=>c.id === id)),
+    info.map(c=>c.id).join(','));   // comm章はSPEC-08aで撤去
   t('B-01b t範囲が昇順', info.every((c,i)=>c.t1 > c.t0 && (i === 0 || c.t0 >= info[i-1].t0)),
     info.map(c=>`${c.id}:${c.t0.toFixed(2)}-${c.t1.toFixed(2)}`).join(' '));
   const ch = id => info.find(c=>c.id === id);
@@ -67,20 +67,6 @@
   t('S-02 CRITICALビネット', parseFloat(Ss.vign.style.opacity) > .1, 'op='+Ss.vign.style.opacity);
   go(sv, 0);
   t('S-03 章外でビネット消灯', parseFloat(Ss.vign.style.opacity || 0) === 0);
-
-  // ---- 章05 COMM ----
-  const cm = ch('comm'), Sc = G.stage('comm');
-  const devAt = k => {
-    go(cm, k);
-    const p = Sc.player.geometry.attributes.position, q = Sc.target.geometry.attributes.position;
-    let d = 0;
-    for(let i = 0; i < p.count; i += 10) d += Math.abs(p.getY(i) - q.getY(i));
-    return d;
-  };
-  const d1 = devAt(.15), d2 = devAt(.95);
-  t('C-01 波形が同調に収束', d2 < d1*.2, `dev ${d1.toFixed(1)}→${d2.toFixed(1)}`);
-  go(cm, .75);
-  t('C-02 同調パルス', Sc.pulse.visible && Sc.pulse.material.opacity > 0);
 
   // ---- テキスト行 ----
   go(f, .9);

@@ -27,7 +27,7 @@
 | 07d | └ SP・アクセシビリティ・性能・最終回帰 | 5-D | Implemented |
 | 08 | 連続アクションシークエンス化＋SIGNAL TUNER撤去 | 6 | Approved |
 | 08-D | └ デザイン検討（絵コンテ・フリーズ視覚言語・コピー） | 6 | Draft |
-| 08a | └ E1: SIGNAL撤去＋テスト/文書改訂 | 6-E1 | Draft |
+| 08a | └ E1: SIGNAL撤去＋テスト/文書改訂 | 6-E1 | Verified |
 | 08b | └ E2: Sortie連続機体＋タイムワープ＋フリーズ3章 | 6-E2 | Draft |
 | 08c | └ E3: 射出/帰投/CLEARANCE・最終化 | 6-E3 | Draft |
 

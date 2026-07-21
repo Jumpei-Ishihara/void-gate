@@ -7,16 +7,16 @@
   if(!V){ window.__PCRESULTS = R; console.table(R); return R; }
 
   // ---- 構成(C-01/07): 章の順序と旧セクション廃止 ----
-  const order = ['hero','ch-briefing','ch-flight','ch-weapons','ch-survival','ch-comm','contact','gallery','ch-launch'];
+  const order = ['hero','ch-briefing','ch-flight','ch-weapons','ch-survival','gallery','ch-launch','contact'];
   const tops = order.map(id=>{ const el = document.getElementById(id); return el ? el.offsetTop : -1; });
   t('C-01 全章存在', tops.every(v=>v >= 0), JSON.stringify(tops));
   t('C-01b 章順序', tops.every((v,i)=>i === 0 || v >= tops[i-1]), tops.join('<'));
   t('C-07 旧セクション廃止', !document.getElementById('mission') && !document.getElementById('tech'));
-  t('C-01c GATEボタン残置', !!document.getElementById('btn-explore') && !!document.getElementById('btn-contact'));
+  t('C-01c GATEボタン残置', !!document.getElementById('btn-explore'));   // CONTACT CTAはSPEC-08aで撤去
 
   // ---- BRIEFING章(C-02) ----
   const info = V.Guide.info();
-  t('C-02 briefing登録', info.length === 5 && info[0].id === 'briefing', info.map(d=>d.id).join(','));
+  t('C-02 briefing登録', info.length === 4 && info[0].id === 'briefing', info.map(d=>d.id).join(','));
   const b = info[0], Sb = V.Guide.stage('briefing');
   V.Tl._setT(b.t0 + (b.t1-b.t0)*.5); V.Tl.update(.016);
   t('C-02b ホログラム表示', Sb.group.visible && Sb.holoRock.material.opacity > .1 && Sb.holoWave.material.opacity > .1);
@@ -29,13 +29,11 @@
 
   // ---- LAUNCH DECK(C-04) ----
   localStorage.setItem('vg-ast-best', '12345');
-  localStorage.removeItem('vg-sig-best');
   V.closeLayer();   // renderBest再実行経路
-  t('C-04 ベスト表示', document.getElementById('best-ast').textContent === '12,345'
-    && document.getElementById('best-sig').textContent === 'NO RECORD',
+  t('C-04 ベスト表示', document.getElementById('best-ast').textContent === '12,345',
     document.getElementById('best-ast').textContent);
   const qr = document.getElementById('quickref');
-  t('C-04b 早見表2枚', qr.querySelectorAll('.card').length === 2 && qr.querySelectorAll('table').length === 2);
+  t('C-04b 早見表1枚', qr.querySelectorAll('.card').length === 1 && qr.querySelectorAll('table').length === 1);
   t('C-04c 早見表の出し分け', V.isTouch ? qr.textContent.includes('ドラッグ') : qr.textContent.includes('左クリック'));
   // CTA起動
   document.getElementById('deck-explore').click();
@@ -64,10 +62,10 @@
   t('C-06 ナビ差替え', navHrefs.includes('#ch-flight') && navHrefs.includes('#ch-launch')
     && !navHrefs.includes('#mission'), navHrefs.join(' '));
 
-  // ---- 実通信(MIG-02) ----
+  // ---- 通信ターミナル(SPEC-08a REM-04) ----
   const ct = document.getElementById('contact');
-  t('MIG-02 実通信化', ct.textContent.includes('LIVE UPLINK') && !!document.getElementById('send')
-    && ct.offsetTop > document.getElementById('ch-comm').offsetTop);
+  t('REM-04 通信ターミナル', ct.textContent.includes('通信ターミナル') && !!document.getElementById('send')
+    && ct.offsetTop >= document.getElementById('ch-launch').offsetTop);
 
   // ---- 回帰: phaseA + phaseB(上位スイートが既に流している場合はスキップ) ----
   const preset = !!window.__SKIP_NESTED_REG;

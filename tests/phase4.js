@@ -50,26 +50,7 @@
 
   V.closeLayer();
 
-  // ---- SIGNAL TUNER ----
-  V.openLayer('signal'); V.SignalGame.menu();
-  document.getElementById('g-start').click();
-  await new Promise(r=>setTimeout(r, 300));
-  const SD = V.SignalGame.debug ? V.SignalGame.debug() : null;
-  t('SIG-03 CRTパターン', SD && SD.scanPat === true);
-  if(SD){
-    SD.testPulse();
-    t('SIG-02 パルス発生', V.SignalGame.debug().pulses >= 1, 'pulses='+V.SignalGame.debug().pulses);
-    SD.agePulses(700);
-    SD.prune();
-    t('SIG-02b パルス寿命0.6s', V.SignalGame.debug().pulses === 0, 'pulses='+V.SignalGame.debug().pulses);
-    SD.testEnd(true);
-    const dec = document.getElementById('g-decode');
-    t('SIG-04 デコード演出', !!dec && dec.dataset.decode === '1');
-    await new Promise(r=>setTimeout(r, 1300));
-    const txt = document.getElementById('g-decode');
-    t('SIG-04b 文字出現', !!txt && txt.textContent.length > 0, 'len='+(txt&&txt.textContent.length));
-  }
-  V.closeLayer();
+  // SIGNAL TUNER関連テストはSPEC-08a(撤去)により削除
 
   // ---- 回帰 + 性能 ----
   V.openLayer('asteroid'); V.AsteroidRun.menu();

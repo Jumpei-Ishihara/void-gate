@@ -4,7 +4,7 @@
  */
 (async ()=>{
   window.__SKIP_NESTED_REG = true;
-  const suites = ['1','2','3','4','A','B','C','D'];
+  const suites = ['1','2','3','4','A','B','C','D','E1'];
   const out = {};
   for(const n of suites){
     const src = await fetch(`/void-gate/tests/phase${n}.js?all=${Date.now()}`).then(r=>r.text());

@@ -29,10 +29,9 @@
   // ---- D-04: aria ----
   t('D-04 装飾canvasのaria-hidden',
     document.getElementById('space').getAttribute('aria-hidden') === 'true'
-    && document.getElementById('game-canvas').getAttribute('aria-hidden') === 'true'
-    && document.getElementById('wave-canvas').getAttribute('aria-hidden') === 'true');
+    && document.getElementById('game-canvas').getAttribute('aria-hidden') === 'true');   // wave-canvasはSPEC-08aで撤去
   const focusables = document.querySelectorAll('#ch-launch a, #ch-launch button, #contact input, #contact textarea, #contact button');
-  t('D-04b CTA/フォームがTab到達可能', focusables.length >= 5, 'focusables='+focusables.length);
+  t('D-04b CTA/フォームがTab到達可能', focusables.length >= 4, 'focusables='+focusables.length);   // E1でCTA1つに
 
   // ---- D-05: 性能(スクロール中のページ合成) ----
   const samples = [];

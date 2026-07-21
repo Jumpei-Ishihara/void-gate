@@ -1,6 +1,6 @@
 # SPEC 08a — Phase E1: SIGNAL TUNER撤去＋テスト/文書改訂
 
-状態: **Draft** ／ 親: [SPEC-08](08-action-sequence.md) ／ 外部素材: 不要
+状態: **Verified (2026-07-20 phaseE1 14/14・run-all 136テスト ALL GREEN・残存参照ゼロをビルド時assert検証)** ／ 親: [SPEC-08](08-action-sequence.md) ／ 外部素材: 不要
 
 ## 1. 目的
 

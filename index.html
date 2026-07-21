@@ -253,13 +253,12 @@ footer{
 /* ===== ミニゲーム ===== */
 #game-layer{position:fixed;inset:0;z-index:50;background:#020010;display:none}
 #game-layer.on{display:block}
-#game-canvas,#wave-canvas{position:absolute;inset:0;width:100%;height:100%}
+#game-canvas{position:absolute;inset:0;width:100%;height:100%}
 #game-layer.ghit::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(circle,transparent 35%,rgba(255,46,196,.4))}
 #cockpit-vign{position:absolute;inset:0;z-index:1;pointer-events:none;display:none;
   background:radial-gradient(ellipse 125% 95% at 50% 40%,transparent 55%,rgba(2,6,20,.5) 76%,rgba(1,2,10,.92) 100%)}
 #game-layer.cockpit #cockpit-vign{display:block}
 .gview-pick{display:flex;gap:14px;justify-content:center;margin-bottom:28px;flex-wrap:wrap}
-#game-layer.glock::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(circle,transparent 35%,rgba(0,240,255,.35))}
 /* 飛行中: リングは消し、ドットは小さく薄く残す(カーソル位置の認知用) */
 body.no-cursor #cursor-ring{display:none}
 body.no-cursor #cursor{
@@ -331,7 +330,6 @@ body.no-cursor #cursor{
 }
 #game-layer.touch .ghud-row{font-size:9px;padding:5px 9px;gap:8px;letter-spacing:.12em}
 #game-layer.touch .ghud-btn{font-size:9px;padding:5px 9px;letter-spacing:.14em}
-#game-layer.touch .gfrags{font-size:9px;letter-spacing:.12em;padding:5px 9px;min-height:0}
 #game-layer.touch #game-exit{top:10px;right:12px;padding:8px 12px;font-size:10px;letter-spacing:.18em}
 /* モーダルが画面より高い場合はモーダル自身が内部スクロール(タッチ対象=スクローラーでiOSでも確実) */
 #game-overlay{position:absolute;inset:0;z-index:6;display:flex;pointer-events:none;overflow:hidden}
@@ -354,9 +352,7 @@ body.no-cursor #cursor{
   font-size:11px;color:var(--dim);letter-spacing:.12em;margin-bottom:20px;user-select:none}
 .gfs input{accent-color:var(--cyan);width:15px;height:15px;margin:0}
 .gfs:hover span{color:var(--text)}
-.gfrags{font-family:'Orbitron','Noto Sans JP',sans-serif;font-size:12px;letter-spacing:.25em;
-  color:var(--magenta);text-shadow:0 0 12px rgba(255,46,196,.6);
-  background:rgba(4,8,24,.55);border:1px solid rgba(255,46,196,.25);padding:8px 14px;min-height:32px}
+
 
 /* SPEC-07c: LAUNCH DECK */
 .deck{display:flex;gap:26px;flex-wrap:wrap;margin:34px 0}
@@ -401,7 +397,6 @@ body.no-cursor #cursor{
   .ghud-row{font-size:9px;padding:6px 10px;gap:10px;letter-spacing:.14em}
   .ghud-btn{font-size:9px;padding:7px 11px;letter-spacing:.18em}
   .gbtns{gap:12px}
-  .gfrags{font-size:10px;letter-spacing:.15em}
 }
 /* 横持ちスマホなど低い画面: モーダルを圧縮して1画面に収める */
 @media(max-height:560px){
@@ -420,7 +415,6 @@ body.no-cursor #cursor{
   .chapter .ch-pin::after{content:"";position:absolute;left:0;right:0;bottom:0;height:55vh;z-index:-1;
     background:linear-gradient(transparent,rgba(3,0,20,.72))}
   .deck{flex-direction:column}
-  .gfrags{font-size:10px;padding:6px 10px;min-height:26px}
 }
 @media (prefers-reduced-motion:reduce){
   .reveal{transition:none}
@@ -445,7 +439,7 @@ body.no-cursor #cursor{
     <a href="#hero">GATE</a>
     <a href="#ch-flight">FLIGHT</a>
     <a href="#ch-weapons">WEAPONS</a>
-    <a href="#ch-comm">COMM</a>
+    <a href="#ch-survival">SURVIVAL</a>
     <a href="#ch-launch">LAUNCH</a>
   </nav>
 </header>
@@ -460,7 +454,6 @@ body.no-cursor #cursor{
       <p id="typed"></p>
       <div class="hero-actions">
         <a class="btn magnetic" id="btn-explore" href="#">EXPLORE&nbsp;//&nbsp;探査開始</a>
-        <a class="btn magenta magnetic" id="btn-contact" href="#">CONTACT&nbsp;//&nbsp;交信</a>
       </div>
     </div>
     <div class="scroll-cue">▼ 発進シークエンス開始</div>
@@ -470,14 +463,45 @@ body.no-cursor #cursor{
   <section class="chapter" id="ch-flight"><div class="ch-pin"></div></section>
   <section class="chapter" id="ch-weapons"><div class="ch-pin"></div></section>
   <section class="chapter" id="ch-survival"><div class="ch-pin"></div></section>
-  <section class="chapter" id="ch-comm"><div class="ch-pin"></div></section>
   <div id="ch4-vign" aria-hidden="true"></div>
 <!-- SPEC-07b: 訓練章(見出し/本文はJSのCOPYテーブルから注入 — 操作語のPC/SP出し分けのため) -->
+  <section id="gallery">
+    <div class="reveal">
+      <div class="sec-tag">BRIEFING 05 / 06 — NAVIGATION</div>
+      <h2>航行宙域の選択</h2>
+      <p class="lead">操作が世界に届くことを確かめる最終訓練だ。宙域チップを選べ — 背景の惑星が即座に応答する。</p>
+      <div class="planet-ui">
+        <div class="planet-chip active" data-planet="aqua">AQUA-7</div>
+        <div class="planet-chip" data-planet="ember">EMBER-3</div>
+        <div class="planet-chip" data-planet="ion">ION-X</div>
+      </div>
+      <div id="planet-data">
+        <b>AQUA-7 // 氷海惑星</b>
+        全球が液体メタンの海に覆われた惑星。地表温度 -182℃。極軌道上に複素リングを持ち、シアンの大気光が観測される。
+      </div>
+    </div>
+  </section>
+  <section id="ch-launch">
+    <div class="reveal">
+      <div class="sec-tag">LAUNCH DECK 06 / 06 — 出撃甲板</div>
+      <h2>出撃せよ。</h2>
+      <p class="lead">訓練修了。2つの任務が発進口で待っている。ベスト記録はこの端末に保存される。</p>
+      <div class="deck">
+        <div class="deck-bay">
+          <div class="deck-name">ASTEROID RUN</div>
+          <div class="deck-best"><small>BEST</small> <span id="best-ast">NO RECORD</span></div>
+          <a class="btn magnetic" id="deck-explore" href="#">EXPLORE&nbsp;//&nbsp;探査開始</a>
+        </div>
+      </div>
+      <div class="grid" id="quickref"></div>
+    </div>
+  </section>
+
   <section id="contact">
     <div class="reveal">
-      <div class="sec-tag">COMM // LIVE UPLINK</div>
-      <h2>実通信チャンネル</h2>
-      <p class="lead">訓練は以上だ。実際に何か送ってみるといい。</p>
+      <div class="sec-tag">COMM TERMINAL // 常設通信室</div>
+      <h2>通信ターミナル</h2>
+      <p class="lead">気が向いたら、深宇宙へ何か送ってみるといい。応答は — 気長に待て。</p>
       <div class="terminal">
         <div class="term-head"><i></i>UPLINK TERMINAL v3.2 — ENCRYPTED</div>
         <div class="term-body">
@@ -495,42 +519,6 @@ body.no-cursor #cursor{
       </div>
     </div>
   </section>
-  <section id="gallery">
-    <div class="reveal">
-      <div class="sec-tag">BRIEFING 06 / 07 — NAVIGATION</div>
-      <h2>航行宙域の選択</h2>
-      <p class="lead">操作が世界に届くことを確かめる最終訓練だ。宙域チップを選べ — 背景の惑星が即座に応答する。</p>
-      <div class="planet-ui">
-        <div class="planet-chip active" data-planet="aqua">AQUA-7</div>
-        <div class="planet-chip" data-planet="ember">EMBER-3</div>
-        <div class="planet-chip" data-planet="ion">ION-X</div>
-      </div>
-      <div id="planet-data">
-        <b>AQUA-7 // 氷海惑星</b>
-        全球が液体メタンの海に覆われた惑星。地表温度 -182℃。極軌道上に複素リングを持ち、シアンの大気光が観測される。
-      </div>
-    </div>
-  </section>
-  <section id="ch-launch">
-    <div class="reveal">
-      <div class="sec-tag">LAUNCH DECK 07 / 07 — 出撃甲板</div>
-      <h2>出撃せよ。</h2>
-      <p class="lead">訓練修了。2つの任務が発進口で待っている。ベスト記録はこの端末に保存される。</p>
-      <div class="deck">
-        <div class="deck-bay">
-          <div class="deck-name">ASTEROID RUN</div>
-          <div class="deck-best"><small>BEST</small> <span id="best-ast">NO RECORD</span></div>
-          <a class="btn magnetic" id="deck-explore" href="#">EXPLORE&nbsp;//&nbsp;探査開始</a>
-        </div>
-        <div class="deck-bay">
-          <div class="deck-name">SIGNAL TUNER</div>
-          <div class="deck-best"><small>BEST</small> <span id="best-sig">NO RECORD</span></div>
-          <a class="btn magenta magnetic" id="deck-contact" href="#">CONTACT&nbsp;//&nbsp;交信</a>
-        </div>
-      </div>
-      <div class="grid" id="quickref"></div>
-    </div>
-  </section>
 
 
 
@@ -542,7 +530,6 @@ body.no-cursor #cursor{
 
 <div id="game-layer">
   <canvas id="game-canvas" aria-hidden="true"></canvas>
-  <canvas id="wave-canvas" aria-hidden="true"></canvas>
   <div id="cockpit-vign"></div>
   <div id="game-hud"></div>
   <div id="game-overlay"></div>
@@ -749,14 +736,13 @@ addEventListener('scroll', ()=>{
 
 // SPEC-07c: HUDの章表記(セクション実位置と連動, GDE-06)
 const SECTORS = [
-  ['hero',        'GATE 00 / 07 — 着任確認'],
-  ['ch-briefing', 'BRIEFING 01 / 07 — 任務概要'],
-  ['ch-flight',   'BRIEFING 02 / 07 — 操縦訓練'],
-  ['ch-weapons',  'BRIEFING 03 / 07 — 武装と資源'],
-  ['ch-survival', 'BRIEFING 04 / 07 — 生存規定'],
-  ['ch-comm',     'BRIEFING 05 / 07 — 交信訓練'],
-  ['gallery',     'BRIEFING 06 / 07 — 航行宙域'],
-  ['ch-launch',   'LAUNCH DECK 07 / 07 — 出撃準備完了'],
+  ['hero',        'GATE 00 / 06 — 着任確認'],
+  ['ch-briefing', 'BRIEFING 01 / 06 — 任務概要'],
+  ['ch-flight',   'BRIEFING 02 / 06 — 操縦訓練'],
+  ['ch-weapons',  'BRIEFING 03 / 06 — 武装と資源'],
+  ['ch-survival', 'BRIEFING 04 / 06 — 生存規定'],
+  ['gallery',     'BRIEFING 05 / 06 — 航行宙域'],
+  ['ch-launch',   'LAUNCH DECK 06 / 06 — 出撃準備完了'],
 ];
 function updateSector(){
   const y = scrollY + innerHeight*.5;
@@ -986,13 +972,12 @@ const gameLayer = document.getElementById('game-layer');
 const gameHud = document.getElementById('game-hud');
 const gameOverlay = document.getElementById('game-overlay');
 const gameCv = document.getElementById('game-canvas');
-const waveCv = document.getElementById('wave-canvas');
 let activeGame = null;
 let gpaused = false;   // SP縦持ち中はゲームを一時停止(横画面ガイド表示)
 let wantFS = localStorage.getItem('vg-fullscreen') !== '0';   // フルスクリーン設定(デフォルトON)
 
 // モード選択画面のチェックボックスを読み取り、ONならフルスクリーン化(SPはさらに横画面固定を試行)
-// LAUNCH/TUNE INのクリック(ユーザー操作)起点で呼ぶこと。iPhone SafariなどAPI非対応環境は通常表示で続行
+// LAUNCHのクリック(ユーザー操作)起点で呼ぶこと。iPhone SafariなどAPI非対応環境は通常表示で続行
 function applyFSChoice(){
   SoundEngine.ensure();          // ユーザー操作起点でAudioContext解禁(AUD-02)
   SoundEngine.ui('select');
@@ -1022,14 +1007,12 @@ function openLayer(which){
   activeGame = which;
   gameLayer.classList.add('on');
   gameLayer.classList.toggle('touch', IS_TOUCH);
-  gameCv.style.display = which === 'asteroid' ? 'block' : 'none';
-  waveCv.style.display = which === 'signal' ? 'block' : 'none';
+  gameCv.style.display = 'block';
   document.body.style.overflow = 'hidden';
   updateRotateGuide();
 }
 function closeLayer(){
   if(activeGame === 'asteroid') AsteroidRun.stop();
-  if(activeGame === 'signal') SignalGame.stop();
   activeGame = null;
   gameLayer.classList.remove('on');
   gameLayer.classList.remove('cockpit');
@@ -1184,16 +1167,6 @@ const SoundEngine = (()=>{
     e.g.gain.exponentialRampToValueAtTime(.0001, ctx.currentTime + .18);
     setTimeout(()=>{ try{ e.o1.stop(); e.o2.stop(); e.g.disconnect(); }catch(err){} }, 240);
   }
-  // SIGNAL TUNER用の2オシレータ供給(AUD-10)。ゲインはmaster配下=ミュート一元化
-  function beatOsc(){
-    ensure(); if(!ctx) return null;
-    const oP = ctx.createOscillator(), gP = ctx.createGain();
-    const oT = ctx.createOscillator(), gT = ctx.createGain();
-    gP.gain.value = 0; gT.gain.value = 0;
-    oP.connect(gP).connect(master); oT.connect(gT).connect(master);
-    oP.start(); oT.start();
-    return {ctx, oP, gP, oT, gT};
-  }
   function setMute(m){
     muted = !!m;
     localStorage.setItem('vg-mute', muted ? '1' : '0');
@@ -1207,7 +1180,7 @@ const SoundEngine = (()=>{
       masterGain: master ? master.gain.value : -1, lastSfx: test.lastSfx};
   }
   return {ensure, gun, explosion, impact, coreGet, ui,
-          engineStart, engineSpeed, enginePause, engineStop, beatOsc,
+          engineStart, engineSpeed, enginePause, engineStop,
           setMute, toggleMute, stopAll, _test, get muted(){ return muted; }};
 })();
 
@@ -2385,29 +2358,23 @@ const Guide = (()=>{
   const sm = (v, a, b)=>{ const k = Math.min(1, Math.max(0, (v-a)/(b-a))); return k*k*(3-2*k); };
 
   const COPY = {
-    briefing: {num:'BRIEFING 01 / 07', title:'BRIEFING', sub:'任務概要', lines:[
-      [.2,  ()=>'任務は2つ。小惑星帯を突破する探査任務 — ASTEROID RUN。'],
-      [.45, ()=>'そして未知信号との同調を試みる交信任務 — SIGNAL TUNER。'],
-      [.7,  ()=>'順に説明する。まずは操縦訓練からだ。']]},
-    flight: {num:'BRIEFING 02 / 07', title:'FLIGHT', sub:'操縦訓練', lines:[
+    briefing: {num:'BRIEFING 01 / 06', title:'BRIEFING', sub:'任務概要', lines:[
+      [.2,  ()=>'任務はひとつ。小惑星帯を突破する探査任務 — ASTEROID RUN。'],
+      [.5,  ()=>'装備と規定を順に説明する。まずは操縦訓練からだ。']]},
+    flight: {num:'BRIEFING 02 / 06', title:'FLIGHT', sub:'操縦訓練', lines:[
       [.25, ()=>`機体は${pick('マウス','指')}に追従する。画面の行きたい場所へ${pick('カーソルを運べ','指を滑らせろ')}。`],
       [.55, ()=>'上下の機動は左右より機敏だ。縦の回避を恐れるな。'],
       [.8,  ()=>'訓練空域を抜ける。次は武装の説明だ。']]},
-    weapons: {num:'BRIEFING 03 / 07', title:'WEAPONS', sub:'武装と資源', lines:[
+    weapons: {num:'BRIEFING 03 / 06', title:'WEAPONS', sub:'武装と資源', lines:[
       [.05, ()=>'◆エネルギーコア。回収すればスコア×500。だが本当の価値は弾薬であることだ。'],
       [.3,  ()=>`${pick('左クリック','FIREボタン')}で機関砲。コアを1つ消費し、正面の岩を撃ち砕く。`],
       [.62, ()=>'照準は自動でロックする。囲まれたものは、壊せるものだ。'],
       [.85, ()=>'空撃ちはコアを消費しない。残弾ゼロの警告「NO CORE」を見逃すな。']]},
-    survival: {num:'BRIEFING 04 / 07', title:'SURVIVAL', sub:'生存規定', lines:[
+    survival: {num:'BRIEFING 04 / 06', title:'SURVIVAL', sub:'生存規定', lines:[
       [.05, ()=>'シールドは3枚。衝突を3度だけ肩代わりする。'],
       [.25, ()=>'砕けるたび、船体は裸に近づく。速度も20%失われる。'],
       [.65, ()=>'シールド0 — 状態表示「CRITICAL」。赤色灯が回る。次の1発はない。'],
       [.9,  ()=>'最大被弾は4回。それがこの宙域の規定だ。']]},
-    comm: {num:'BRIEFING 05 / 07', title:'COMM', sub:'交信訓練', lines:[
-      [.05, ()=>'未知の信号を受信している。交信には同調が要る。'],
-      [.3,  ()=>`${pick('マウス','指')}の横移動が周波数、縦移動が振幅。`],
-      [.45, ()=>'波形が重なったまま1.3秒 — それでチャンネルが開く。制限時間60秒で5チャンネル。'],
-      [.7,  ()=>'同調完了。向こう側の言葉が、ほどけていく。']]},
   };
 
   function fillDom(){
@@ -2573,43 +2540,6 @@ const Guide = (()=>{
         this._prev = tl;
       }};
   }
-  // ---- 章05 COMM: 3D波形リボンの同調デモ ----
-  function buildComm(){
-    const g = new THREE.Group();
-    const N = IS_TOUCH ? 60 : 120;
-    const mkLine = color=>{
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N*3), 3));
-      const l = new THREE.Line(geo, new THREE.LineBasicMaterial({color, transparent:true, opacity:.9,
-        blending:THREE.AdditiveBlending}));
-      l.frustumCulled = false; g.add(l); return l;
-    };
-    const target = mkLine(0xff2ec4), player = mkLine(0x00f0ff);
-    const pulse = new THREE.Mesh(new THREE.RingGeometry(1, 1.1, 32),
-      new THREE.MeshBasicMaterial({color:0x7dffec, transparent:true, opacity:0,
-        side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false}));
-    pulse.visible = false; g.add(pulse);
-    const TF = 1.15, TA = 2.2;
-    return {group:g, target, player, pulse, N, _prev:0,
-      update(tl){
-        const conv = sm(tl, .3, .7);
-        const pf = 2.1 + (TF - 2.1)*conv, pa = .9 + (TA - .9)*conv;
-        const tp = target.geometry.attributes.position, pp = player.geometry.attributes.position;
-        for(let i = 0; i < N; i++){
-          const x = (i/(N-1) - .5)*26;
-          tp.setXYZ(i, x, Math.sin(x*TF*.5 + tl*6)*TA, -10);
-          const jit = (1 - conv)*Math.sin(i*7.3 + tl*40)*.5;
-          pp.setXYZ(i, x, Math.sin(x*pf*.5 + tl*6)*pa + jit, -9.6);
-        }
-        tp.needsUpdate = true; pp.needsUpdate = true;
-        const pk = (tl - .7)/.15;
-        pulse.visible = pk > 0 && pk < 1;
-        if(pulse.visible){ pulse.position.set(0, 0, -10); pulse.scale.setScalar(1 + pk*16); pulse.material.opacity = .6*(1 - pk); }
-        if(this._prev < .7 && tl >= .7) SoundEngine.ui('sync');
-        this._prev = tl;
-      }};
-  }
-
   // 章のt範囲はDOM実測から導出(レイアウト変更に自動追従) + ステージをカメラ通過位置へ配置
   function measure(){
     const max = document.documentElement.scrollHeight - innerHeight;
@@ -2625,7 +2555,7 @@ const Guide = (()=>{
   }
   function setup(){
     fillDom();
-    const builders = {briefing:buildBriefing, flight:buildFlight, weapons:buildWeapons, survival:buildSurvival, comm:buildComm};
+    const builders = {briefing:buildBriefing, flight:buildFlight, weapons:buildWeapons, survival:buildSurvival};
     for(const id of Object.keys(builders)){
       const st = builders[id]();
       st.group.visible = false;
@@ -2658,266 +2588,21 @@ const Guide = (()=>{
     _forceReduced(v){ redOverride = v; }};
 })();
 
-/* ---------- GAME 2: SIGNAL TUNER(交信) ---------- */
-const SignalGame = (()=>{
-  const g = waveCv.getContext('2d');
-  const FRAGS = ['私タチハ', '扉ノ', '向コウ側デ', 'アナタヲ', '待ッテイル'];
-  const LOCK_NEED = 1.3;   // 同調維持秒数
-  let raf = 0, playing = false, last = 0, frame = 0, st = null, ph = 0;
-  let mx = .5, my = .35;
-  let actx = null, oscP, oscT, gainP, gainT;   // SoundEngine共有ctx配下(AUD-10)
-  const pulses = [];                            // SIG-02: 同調成立パルス
-  let scanPat = null, vign = null;              // SIG-03: CRT走査線/周辺減光(resizeで生成)
-
-  gameHud.addEventListener('click', e=>{
-    if(!e.target.closest('#g-mute')) return;
-    SoundEngine.toggleMute();
-    applyMute();
-    hud();
-  });
-
-  function ensureAudio(){
-    if(actx){ SoundEngine.ensure(); applyMute(); return; }
-    const b = SoundEngine.beatOsc();
-    if(!b) return;
-    actx = b.ctx; oscP = b.oP; gainP = b.gP; oscT = b.oT; gainT = b.gT;
-    applyMute();
-  }
-  function applyMute(){
-    if(!actx) return;
-    // マスターゲインで一元ミュートされるため、ここでは基準音量のみ設定
-    gainP.gain.value = .025;
-    gainT.gain.value = .02;
-  }
-  function resize(){
-    const d = Math.min(devicePixelRatio, 2);
-    waveCv.width = innerWidth*d;
-    waveCv.height = innerHeight*d;
-    g.setTransform(d, 0, 0, d, 0, 0);
-    // SIG-03: 走査線パターン(4px周期)と周辺減光を事前生成(毎フレームの生成コスト回避)
-    const pc = document.createElement('canvas'); pc.width = 4; pc.height = 4;
-    const pg = pc.getContext('2d');
-    pg.fillStyle = 'rgba(0,0,0,.55)'; pg.fillRect(0, 2, 4, 1);
-    scanPat = g.createPattern(pc, 'repeat');
-    vign = g.createRadialGradient(innerWidth/2, innerHeight/2, Math.min(innerWidth, innerHeight)*.42,
-      innerWidth/2, innerHeight/2, Math.max(innerWidth, innerHeight)*.72);
-    vign.addColorStop(0, 'rgba(0,0,0,0)');
-    vign.addColorStop(1, 'rgba(2,0,16,.5)');
-  }
-  function newTarget(){
-    st.tf = 2.2 + Math.random()*6.5;
-    st.ta = .18 + Math.random()*.6;
-  }
-  function hud(){
-    if(!st) return;
-    gameHud.innerHTML = `
-      <div class="ghud-row"><span class="glabel">CHANNEL</span><span class="gval">0${Math.min(5, st.locked+1)} / 05</span></div>
-      <div class="ghud-row"><span class="glabel">TIME</span><span class="gval">${st.time.toFixed(1)} s</span></div>
-      <div class="gfrags">${st.frags.join(' ') || '— 解読待機中 —'}</div>
-      <button class="ghud-btn" id="g-mute">${SoundEngine.muted ? 'SOUND: OFF' : 'SOUND: ON'}</button>`;
-  }
-  function menu(){
-    gameOverlay.innerHTML = `
-      <div class="gscreen">
-        <div class="gtitle">SIGNAL TUNER</div>
-        <p class="gdesc">深宇宙から未知の信号を受信中。マウスを動かして自機の波形(シアン)を<br>
-        ターゲット波形(マゼンタ)に同調させよ — <b>横: 周波数 / 縦: 振幅</b>。<br>
-        同調を1.3秒維持でチャンネル確立。5チャンネルで交信成立。制限時間60秒。</p>
-        <label class="gfs"><input type="checkbox" id="g-fs"${wantFS ? ' checked' : ''}><span>フルスクリーンでプレイ</span></label>
-        <a class="btn" id="g-start">TUNE IN ▸</a>
-      </div>`;
-    document.getElementById('g-start').addEventListener('click', ()=>{ applyFSChoice(); start(); });
-  }
-  function start(){
-    resize();
-    ensureAudio();
-    gameOverlay.innerHTML = '';
-    st = {locked:0, lockT:0, time:60, tol:.11, frags:[], tf:0, ta:0};
-    newTarget();
-    hud();
-    playing = true; last = performance.now();
-    cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(loop);
-  }
-  function end(win){
-    playing = false; cancelAnimationFrame(raf);
-    if(gainP){ gainP.gain.value = 0; gainT.gain.value = 0; }   // 共有ctxはsuspendせずビート音のみ停止
-    const score = st.locked*1000 + (win ? Math.floor(st.time*20) : 0);
-    const best = Math.max(score, +(localStorage.getItem('vg-sig-best')||0));
-    localStorage.setItem('vg-sig-best', best);
-    gameOverlay.innerHTML = `
-      <div class="gscreen">
-        <div class="gtitle"${win ? '' : ' style="text-shadow:0 0 30px rgba(255,46,196,.7)"'}>${win ? 'TRANSMISSION DECODED' : 'SIGNAL LOST'}</div>
-        <p class="gdesc">${win ? '全チャンネル同調完了。解読されたメッセージ:' : `時間切れ — 同調できたのは ${st.locked} / 5 チャンネル`}</p>
-        ${win ? `<div class="gfrags" id="g-decode" data-decode="1" style="display:inline-block;margin-bottom:28px">&nbsp;</div>` : ''}
-        <div class="gscore">SCORE ${score}<small> / BEST ${best}</small></div>
-        <div class="gbtns"><a class="btn" id="g-retry">RETRY ▸</a><a class="btn magenta" id="g-quit">EXIT</a></div>
-      </div>`;
-    document.getElementById('g-retry').addEventListener('click', start);
-    document.getElementById('g-quit').addEventListener('click', closeLayer);
-    lockButtons();   // 連打クリックの貫通防止
-    if(win){
-      // SIG-04: 1文字ずつランダム文字→確定するデコード表示
-      const el = document.getElementById('g-decode');
-      const msg = FRAGS.join(' ');
-      const glyphs = 'アイウエオカキクケコサシスセソ01△▽◆#*';
-      let idx = 0;
-      const timer = setInterval(()=>{
-        if(!document.getElementById('g-decode')){ clearInterval(timer); return; }
-        idx++;
-        if(idx >= msg.length){ el.textContent = msg; clearInterval(timer); return; }
-        el.textContent = msg.slice(0, idx) +
-          Array.from({length: Math.min(6, msg.length-idx)}, ()=>glyphs[Math.random()*glyphs.length|0]).join('');
-      }, REDUCED ? 1 : 28);
-    }
-  }
-  function drawWave(w, mid, H, f, a, phk, jit){
-    g.beginPath();
-    for(let x=0; x<=w; x+=4){
-      const y = mid + Math.sin((x/w)*f*Math.PI*2 + ph*phk)*a*H + (jit ? (Math.random()-.5)*jit : 0);
-      x === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
-    }
-    g.stroke();
-  }
-  function loop(now){
-    if(!playing) return;
-    raf = requestAnimationFrame(loop);
-    if(gpaused){ last = now; if(gainP) gainP.gain.value = gainT.gain.value = 0; return; }   // 縦持ち中はタイマーと音を停止
-    if(gainP && gainP.gain.value === 0) applyMute();
-    const dt = Math.min(.05, (now-last)/1000); last = now;
-    ph += dt*2.4;
-    st.time = Math.max(0, st.time - dt);
-
-    const w = innerWidth, h = innerHeight;
-    const pf = 2 + mx*7.5;
-    const pa = .12 + (1-my)*.66;
-    const df = Math.abs(pf-st.tf)/st.tf;
-    const da = Math.abs(pa-st.ta)/st.ta;
-    const matched = df < st.tol && da < st.tol*1.5;
-    st.lockT = matched ? st.lockT + dt : Math.max(0, st.lockT - dt*1.8);
-
-    if(actx){
-      oscP.frequency.value = 70 + pf*30;
-      oscT.frequency.value = 70 + st.tf*30;
-    }
-
-    if(st.lockT >= LOCK_NEED){
-      st.locked++;
-      SoundEngine.ui('sync');
-      if(!REDUCED) pulses.push({t0: performance.now()});   // SIG-02
-      st.frags.push(FRAGS[st.locked-1]);
-      st.lockT = 0;
-      st.tol = Math.max(.05, st.tol*.85);
-      gameLayer.classList.add('glock');
-      setTimeout(()=>gameLayer.classList.remove('glock'), 280);
-      hud();
-      if(st.locked >= 5) return end(true);
-      newTarget();
-    }
-    if(st.time <= 0) return end(false);
-
-    g.clearRect(0, 0, w, h);
-    g.strokeStyle = 'rgba(0,240,255,.07)'; g.lineWidth = 1;
-    g.beginPath();
-    for(let gx=0; gx<=w; gx+=80){ g.moveTo(gx, 0); g.lineTo(gx, h); }
-    for(let gy=0; gy<=h; gy+=80){ g.moveTo(0, gy); g.lineTo(w, gy); }
-    g.stroke();
-
-    const mid = h*.54, H = h*.3;
-    // SIG-01: 太い下引きグロー(2回描画方式 — shadowBlur依存を減らし負荷安定)
-    g.save();
-    g.strokeStyle = 'rgba(255,46,196,.16)'; g.lineWidth = 8;
-    g.setLineDash([10, 8]);
-    drawWave(w, mid, H, st.tf, st.ta, 1.3, 0);
-    g.restore();
-    g.save();
-    g.strokeStyle = 'rgba(0,240,255,.16)'; g.lineWidth = 9;
-    drawWave(w, mid, H, pf, pa, 1, matched ? 0 : Math.min(1, df+da)*26);
-    g.restore();
-
-    g.save();
-    g.setLineDash([10, 8]);
-    g.strokeStyle = 'rgba(255,46,196,.85)'; g.shadowColor = '#ff2ec4'; g.shadowBlur = 10; g.lineWidth = 2;
-    drawWave(w, mid, H, st.tf, st.ta, 1.3, 0);
-    g.restore();
-
-    g.save();
-    g.strokeStyle = matched ? '#7dffec' : 'rgba(0,240,255,.95)';
-    g.shadowColor = '#00f0ff'; g.shadowBlur = 12; g.lineWidth = 2.5;
-    drawWave(w, mid, H, pf, pa, 1, matched ? 0 : Math.min(1, df+da)*26);
-    g.restore();
-
-    // SIG-02: 同調成立パルス(同心円3本+初期フラッシュ)
-    for(let i = pulses.length-1; i >= 0; i--){
-      const age = (performance.now() - pulses[i].t0)/600;
-      if(age >= 1){ pulses.splice(i, 1); continue; }
-      const maxR = Math.max(w, h)*.5;
-      g.save();
-      g.strokeStyle = `rgba(125,255,236,${(1-age)*.5})`;
-      g.lineWidth = 2.5;
-      for(let k = 0; k < 3; k++){
-        const rr = maxR*age*(1 - k*.18);
-        if(rr <= 0) continue;
-        g.beginPath(); g.arc(w/2, mid, rr, 0, Math.PI*2); g.stroke();
-      }
-      if(age < .08){ g.fillStyle = 'rgba(255,255,255,.16)'; g.fillRect(0, 0, w, h); }   // 擬似フラッシュ
-      g.restore();
-    }
-    // SIG-03: CRT走査線 + 周辺減光(判読性を保つ低alpha)
-    if(scanPat){ g.save(); g.globalAlpha = .35; g.fillStyle = scanPat; g.fillRect(0, 0, w, h); g.restore(); }
-    if(vign){ g.fillStyle = vign; g.fillRect(0, 0, w, h); }
-
-    const bw = Math.min(280, w-80), bx = (w-bw)/2, by = w < 720 ? 176 : 30;   // 狭幅ではコンパクトHUDの直下へ
-    g.fillStyle = 'rgba(255,255,255,.08)';
-    g.fillRect(bx, by, bw, 8);
-    g.fillStyle = matched ? '#00f0ff' : 'rgba(0,240,255,.35)';
-    g.fillRect(bx, by, bw*Math.min(1, st.lockT/LOCK_NEED), 8);
-    g.fillStyle = 'rgba(223,233,255,.8)';
-    g.font = '11px Orbitron, monospace';
-    g.textAlign = 'center';
-    g.fillText(`SYNC ${Math.floor(Math.min(1, st.lockT/LOCK_NEED)*100)}%`, w/2, by+28);
-
-    if(++frame%5 === 0) hud();
-  }
-  function input(x, y){ mx = x/innerWidth; my = y/innerHeight; }
-  function stop(){ playing = false; cancelAnimationFrame(raf); if(gainP){ gainP.gain.value = 0; gainT.gain.value = 0; } }
-  function debug(){
-    return {pulses: pulses.length, scanPat: !!scanPat,
-      testPulse: ()=>pulses.push({t0: performance.now()}),
-      agePulses: ms=>pulses.forEach(p=>p.t0 -= ms),
-      prune: ()=>{ const now = performance.now();
-        for(let i = pulses.length-1; i >= 0; i--) if(now - pulses[i].t0 >= 600) pulses.splice(i, 1); },
-      testEnd: end};
-  }
-  return {menu, stop, input, resize, debug};
-})();
-
 /* ---------- ゲーム起動の配線 ---------- */
 document.getElementById('btn-explore').addEventListener('click', e=>{
   e.preventDefault();
   openLayer('asteroid');
   AsteroidRun.menu();
 });
-document.getElementById('btn-contact').addEventListener('click', e=>{
-  e.preventDefault();
-  openLayer('signal');
-  SignalGame.menu();
-});
 document.getElementById('deck-explore').addEventListener('click', e=>{
   e.preventDefault();
   openLayer('asteroid');
   AsteroidRun.menu();
 });
-document.getElementById('deck-contact').addEventListener('click', e=>{
-  e.preventDefault();
-  openLayer('signal');
-  SignalGame.menu();
-});
 // SPEC-07c: ベストスコア表示(端末ローカル値)
 function renderBest(){
-  const a = localStorage.getItem('vg-ast-best'), g = localStorage.getItem('vg-sig-best');
+  const a = localStorage.getItem('vg-ast-best');
   document.getElementById('best-ast').textContent = a ? Number(a).toLocaleString() : 'NO RECORD';
-  document.getElementById('best-sig').textContent = g ? Number(g).toLocaleString() : 'NO RECORD';
 }
 renderBest();
 // SPEC-07c: 操作早見表(CONTROLS単一ソース、PC/SPで出し分け)
@@ -2925,8 +2610,6 @@ const CONTROLS = {
   asteroid: [['操縦', 'マウス移動', '画面をドラッグ'], ['機関砲', '左クリック', '左下のFIREボタン(長押しで連射)'],
     ['視点切替', 'V / HUDボタン', '起動メニューで選択'], ['ロックオン', 'L / HUDボタン', 'AUTO固定'],
     ['サウンド', 'M / HUDボタン', 'HUDの♪ボタン'], ['終了', 'ESC / EXIT', 'EXITボタン']],
-  signal: [['周波数', 'マウス横移動', '指の横移動'], ['振幅', 'マウス縦移動', '指の縦移動'],
-    ['サウンド', 'HUDボタン', 'HUDボタン'], ['終了', 'ESC / EXIT', 'EXITボタン']],
 };
 (function renderQuickref(){
   const idx = IS_TOUCH ? 2 : 1;
@@ -2934,7 +2617,7 @@ const CONTROLS = {
     <div class="num">QUICK REF</div><h3>${name}</h3>
     <table>${rows.map(r=>`<tr><td>${r[0]}</td><td>${r[idx]}</td></tr>`).join('')}</table></div>`;
   const el = document.getElementById('quickref');
-  el.innerHTML = card('ASTEROID RUN', CONTROLS.asteroid) + card('SIGNAL TUNER', CONTROLS.signal);
+  el.innerHTML = card('ASTEROID RUN', CONTROLS.asteroid);
   el.querySelectorAll('.tilt').forEach(cardEl=>{   // 動的追加分にチルトを配線
     cardEl.addEventListener('mousemove', e=>{
       const r = cardEl.getBoundingClientRect();
@@ -2961,13 +2644,12 @@ addEventListener('mousedown', e=>{
 });
 addEventListener('mousemove', e=>{
   if(activeGame === 'asteroid') AsteroidRun.input(e.clientX, e.clientY);
-  else if(activeGame === 'signal') SignalGame.input(e.clientX, e.clientY);
 });
 const touchSteer = e=>{
   lastTouchTs = performance.now();
   if(!activeGame || !e.touches[0]) return;
   if(e.target.closest('#game-exit,#game-hud,#game-overlay,#fire-btn,#rotate-guide')) return;
-  (activeGame === 'asteroid' ? AsteroidRun : SignalGame).input(e.touches[0].clientX, e.touches[0].clientY);
+  if(activeGame === 'asteroid') AsteroidRun.input(e.touches[0].clientX, e.touches[0].clientY);
 };
 addEventListener('touchstart', touchSteer, {passive:true});   // 指を置いた瞬間から操舵
 addEventListener('touchmove', touchSteer, {passive:true});
@@ -2994,14 +2676,13 @@ addEventListener('resize', ()=>{
   if(pageBloom) pageBloom.setSize(innerWidth*.5, innerHeight*.5);
   Guide.measure();
   if(activeGame === 'asteroid') AsteroidRun.resize();
-  if(activeGame === 'signal') SignalGame.resize();
 });
 
 Guide.setup();   // SPEC-07b: 訓練章の構築(全ステージ初期構築, PER-02)
 loop();
 
 // テストハーネス用の公開フック(specs/00 §5)。ゲーム挙動には関与しない
-window.VG = {SoundEngine, AsteroidRun, SignalGame, Quality, openLayer, closeLayer,
+window.VG = {SoundEngine, AsteroidRun, Quality, openLayer, closeLayer,
   Tl, Assets, Guide, pageMouse: mouse, isTouch: IS_TOUCH,
   pageFx: {composer: pageComposer, get bloom(){ return pageBloom; }}};
 </script>

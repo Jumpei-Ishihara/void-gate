@@ -15,8 +15,8 @@
 
   // ---- SPEC-01 SoundEngine ----
   t('AUD-01 API表面', SE && ['ensure','gun','explosion','impact','coreGet','ui',
-    'engineStart','engineSpeed','engineStop','beatOsc','setMute','toggleMute','stopAll']
-    .every(k => typeof SE[k] === 'function'));
+    'engineStart','engineSpeed','engineStop','setMute','toggleMute','stopAll']
+    .every(k => typeof SE[k] === 'function'));   // beatOscはSPEC-08aで撤去
 
   let ctxOk = false, ctxState = 'none';
   try{ SE.ensure(); ctxOk = !!SE._test().ctx; ctxState = SE._test().ctx?.state; }catch(e){ ctxState = 'throw:'+e.message; }
