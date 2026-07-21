@@ -25,7 +25,11 @@
 | 07b | └ 訓練章 02〜05（コピー全文含む） | 5-B | Implemented |
 | 07c | └ 導入/出口章・HUD/コピー統一 | 5-C | Implemented |
 | 07d | └ SP・アクセシビリティ・性能・最終回帰 | 5-D | Implemented |
-| 08 | 連続アクションシークエンス化＋SIGNAL TUNER撤去 | 6 | Draft |
+| 08 | 連続アクションシークエンス化＋SIGNAL TUNER撤去 | 6 | Approved |
+| 08-D | └ デザイン検討（絵コンテ・フリーズ視覚言語・コピー） | 6 | Draft |
+| 08a | └ E1: SIGNAL撤去＋テスト/文書改訂 | 6-E1 | Draft |
+| 08b | └ E2: Sortie連続機体＋タイムワープ＋フリーズ3章 | 6-E2 | Draft |
+| 08c | └ E3: 射出/帰投/CLEARANCE・最終化 | 6-E3 | Draft |
 
 ## 1. 共通制約（全SPECに適用）
 
