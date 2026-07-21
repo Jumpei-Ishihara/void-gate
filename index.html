@@ -354,6 +354,12 @@ body.no-cursor #cursor{
 .gfs:hover span{color:var(--text)}
 
 
+/* SPEC-08b: フリーズ中のTIME HOLDバッジ */
+#time-hold{position:fixed;top:24px;left:50%;transform:translateX(-50%);z-index:5;
+  font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:.4em;color:var(--cyan);
+  border:1px solid rgba(0,240,255,.4);padding:6px 16px;background:rgba(4,8,24,.6);
+  text-shadow:0 0 10px rgba(0,240,255,.6);pointer-events:none}
+
 /* SPEC-07c: LAUNCH DECK */
 .deck{display:flex;gap:26px;flex-wrap:wrap;margin:34px 0}
 .deck-bay{flex:1;min-width:250px;padding:28px;background:var(--panel);border:1px solid var(--line);
@@ -429,6 +435,7 @@ body.no-cursor #cursor{
 <div class="hud-corner hud-tl"></div><div class="hud-corner hud-tr"></div>
 <div class="hud-corner hud-bl"></div><div class="hud-corner hud-br"></div>
 <div id="hud-status">SECTOR 01 / 05 — SIGNAL LOCKED</div>
+<div id="time-hold" aria-hidden="true" style="display:none">⏸ TIME HOLD</div>
 <div id="progress-track"><div id="progress-bar"></div></div>
 <div id="flash"></div>
 <div id="cursor"></div><div id="cursor-ring"></div>
@@ -802,7 +809,7 @@ function loop(){
 
   // タイムライン更新(SPEC-07a) + パララックス + キーフレームカメラ航行
   Tl.update(dtP);
-  const cam = Tl.camAt(Tl.t);
+  const cam = Tl.camAt(Guide.gT());   // フリーズ中はカメラも静止(SPEC-08b)
   mouse.x += (mouse.tx - mouse.x)*.05;
   mouse.y += (mouse.ty - mouse.y)*.05;
   camera.position.z += (cam.z - camera.position.z)*.06;
@@ -813,6 +820,8 @@ function loop(){
     camera.updateProjectionMatrix();
   }
   camera.lookAt(0, 0, camera.position.z - 100);
+  const gm = Guide.camMod();   // フリーズ中はイベントへ寄る(SPEC-08b E2-07)
+  camera.position.x += gm.x; camera.position.y += gm.y;
 
   // ページブルームの予算監視(3秒超過で恒久OFF)
   pageMs += (dtP*1000 - pageMs)*.05;
@@ -1129,6 +1138,7 @@ const SoundEngine = (()=>{
     ensure(); test.lastSfx = {type:'ui:'+kind}; if(!ctx) return;
     const t0 = ctx.currentTime;
     if(kind === 'select'){ const v = voice(.05); tone(v, 'sine', 880, 880, .04, .5); env(v.g, t0, .3, .05); }
+    else if(kind === 'hold'){ const v = voice(.32); tone(v, 'sine', 220, 190, .3, .4); env(v.g, t0, .3, .32); }
     else if(kind === 'over'){ const v = voice(.5); tone(v, 'sawtooth', 220, 80, .5, .4); env(v.g, t0, .4, .5); }
     else if(kind === 'sync'){ const v = voice(.3); tone(v, 'sine', 1046, 1046, .3, .3); tone(v, 'sine', 1318, 1318, .3, .25); env(v.g, t0, .4, .3); }
   }
@@ -2354,6 +2364,84 @@ const Guide = (()=>{
   const defs = [], stages = {};
   let redOverride = null;   // テスト用(D-03)。null=OSのprefers-reduced-motionに従う
   const red = ()=>redOverride === null ? REDUCED : redOverride;
+
+  // ===== SPEC-08b: タイムワープ(フリーズ=時間写像の平坦区間) =====
+  function warp(tl, f0, f1){
+    if(tl <= f0) return tl;
+    if(tl <= f1) return f0;
+    return f0 + (tl - f1)/(1 - f1)*(1 - f0);
+  }
+  function fzDepth(tl, f0, f1){
+    if(tl <= f0 || tl >= f1) return 0;
+    return Math.min(1, (tl - f0)/.06, (f1 - tl)/.06);
+  }
+  const bell = (v, a, b)=>{ const m = (a + b)/2; return sm(v, a, m)*(1 - sm(v, m, b)); };
+
+  // ===== SPEC-08b: Sortieレイヤー(全章連続の1機 + 共通岩帯) =====
+  const sortie = {ship:null, parts:null, rocks:[], SHIP:[{t:0, x:0, y:-1, dz:-16, roll:0}, {t:1, x:0, y:-1, dz:-16, roll:0}]};
+  const fxState = {fz:0, cam:{x:0, y:0}};
+  function buildSortie(){
+    const sb = Assets.buildShip();
+    sortie.ship = sb.group; sortie.parts = sb.parts;
+    sortie.ship.scale.setScalar(1.05);
+    scene.add(sortie.ship);
+    const NR = IS_TOUCH ? 16 : 26;
+    const geos = Assets.rockGeos(), mats = Assets.rockMats();
+    let seed = 99; const rnd = ()=>((seed = (seed*1664525 + 1013904223)>>>0)/4294967296);
+    for(let i = 0; i < NR; i++){
+      const m = new THREE.Mesh(geos[i%8], mats[i%3]);
+      m.userData.u = {a: rnd()*6.283, r: 8 + rnd()*11, s: .7 + rnd()*1.6, sp: (rnd()-.5)*1.4};
+      m.scale.setScalar(m.userData.u.s);
+      scene.add(m); sortie.rocks.push(m);
+    }
+  }
+  function shipAt(t){
+    const K = sortie.SHIP;
+    let a = K[0], b = K[K.length-1];
+    for(let i = 0; i < K.length-1; i++) if(t >= K[i].t && t <= K[i+1].t){ a = K[i]; b = K[i+1]; break; }
+    const span = (b.t - a.t) || 1;
+    let k = Math.min(1, Math.max(0, (t - a.t)/span)); k = k*k*(3 - 2*k);
+    const L = (p, q)=>p + (q - p)*k;
+    return {x: L(a.x, b.x), y: L(a.y, b.y), dz: L(a.dz, b.dz), roll: L(a.roll, b.roll)};
+  }
+  function updateSortie(){
+    const t = gT();
+    const cam = Tl.camAt(t), sp = shipAt(t), fz = fxState.fz;
+    const mx = mouse.x*(1 - fz)*.9, my = -mouse.y*(1 - fz)*.7;   // 微追従(凍結中は停止)
+    sortie.ship.position.set(cam.x + sp.x + mx, cam.y + sp.y + my, cam.z + sp.dz);
+    sortie.ship.rotation.set(my*.4, 0, sp.roll - mx*.5);
+    const ex = .9 + Math.sin(t*46)*.08;   // 排気の脈動(t純関数)
+    sortie.parts.exhaust.forEach(e=>e.scale.set(.9, 1.6*ex, 1));
+    for(const m of sortie.rocks){   // 自転もtの純関数(逆再生対応)
+      m.rotation.y = m.userData.u.a + t*m.userData.u.sp*4;
+      m.rotation.x = m.userData.u.a*.7 + t*m.userData.u.sp*3;
+    }
+  }
+  // フリーズ演出の集約(E2-05): 全章の凍結深度の最大値で減彩+バッジ+カメラ寄り
+  function applyFx(){
+    let fz = 0, cx = 0, cy = 0;
+    for(const d of defs){
+      if(d._fz > fz){ fz = d._fz; cx = (d.camOff ? d.camOff.x : 0)*d._fz; cy = (d.camOff ? d.camOff.y : 0)*d._fz; }
+    }
+    fxState.fz = fz; fxState.cam.x = cx; fxState.cam.y = cy;
+    const sp = document.getElementById('space');
+    sp.style.filter = fz > 0 ? `saturate(${(1 - fz*.5).toFixed(3)}) contrast(${(1 + fz*.08).toFixed(3)})` : '';
+    document.getElementById('time-hold').style.display = fz > .01 ? 'block' : 'none';
+  }
+  function camMod(){ return fxState.cam; }
+  // フリーズ中はカメラ・機体・岩帯のグローバル時間も静止させる(E2-04の静止保証)
+  function gT(){
+    const t = Tl.t;
+    for(const d of defs){
+      const st = stages[d.id];
+      if(!st || !st.fz) continue;
+      if(t > d.t0 && t < d.t1){
+        const span = d.t1 - d.t0, tl = (t - d.t0)/span;
+        return d.t0 + span*warp(tl, st.fz.f0, st.fz.f1);
+      }
+    }
+    return t;
+  }
   const pick = (pc, sp)=>IS_TOUCH ? sp : pc;
   const sm = (v, a, b)=>{ const k = Math.min(1, Math.max(0, (v-a)/(b-a))); return k*k*(3-2*k); };
 
@@ -2362,19 +2450,19 @@ const Guide = (()=>{
       [.2,  ()=>'任務はひとつ。小惑星帯を突破する探査任務 — ASTEROID RUN。'],
       [.5,  ()=>'装備と規定を順に説明する。まずは操縦訓練からだ。']]},
     flight: {num:'BRIEFING 02 / 06', title:'FLIGHT', sub:'操縦訓練', lines:[
-      [.25, ()=>`機体は${pick('マウス','指')}に追従する。画面の行きたい場所へ${pick('カーソルを運べ','指を滑らせろ')}。`],
-      [.55, ()=>'上下の機動は左右より機敏だ。縦の回避を恐れるな。'],
-      [.8,  ()=>'訓練空域を抜ける。次は武装の説明だ。']]},
+      [.46, ()=>`機体は${pick('マウス','指')}に追従する。画面の行きたい場所へ${pick('カーソルを運べ','指を滑らせろ')}。`],
+      [.52, ()=>'上下の機動は左右より機敏だ。縦の回避を恐れるな。'],
+      [.58, ()=>'訓練空域を抜ける。次は武装の説明だ。']]},
     weapons: {num:'BRIEFING 03 / 06', title:'WEAPONS', sub:'武装と資源', lines:[
-      [.05, ()=>'◆エネルギーコア。回収すればスコア×500。だが本当の価値は弾薬であることだ。'],
-      [.3,  ()=>`${pick('左クリック','FIREボタン')}で機関砲。コアを1つ消費し、正面の岩を撃ち砕く。`],
-      [.62, ()=>'照準は自動でロックする。囲まれたものは、壊せるものだ。'],
-      [.85, ()=>'空撃ちはコアを消費しない。残弾ゼロの警告「NO CORE」を見逃すな。']]},
+      [.1,  ()=>'◆エネルギーコア。回収すればスコア×500。だが本当の価値は弾薬であることだ。'],
+      [.54, ()=>`${pick('左クリック','FIREボタン')}で機関砲。コアを1つ消費し、正面の岩を撃ち砕く。`],
+      [.6,  ()=>'照準は自動でロックする。囲まれたものは、壊せるものだ。'],
+      [.68, ()=>'空撃ちはコアを消費しない。残弾ゼロの警告「NO CORE」を見逃すな。']]},
     survival: {num:'BRIEFING 04 / 06', title:'SURVIVAL', sub:'生存規定', lines:[
-      [.05, ()=>'シールドは3枚。衝突を3度だけ肩代わりする。'],
-      [.25, ()=>'砕けるたび、船体は裸に近づく。速度も20%失われる。'],
-      [.65, ()=>'シールド0 — 状態表示「CRITICAL」。赤色灯が回る。次の1発はない。'],
-      [.9,  ()=>'最大被弾は4回。それがこの宙域の規定だ。']]},
+      [.48, ()=>'— 今、お前は岩に触れた。シールドは3枚。衝突を3度だけ肩代わりする。'],
+      [.55, ()=>'砕けるたび、船体は裸に近づく。速度も20%失われる。'],
+      [.62, ()=>'シールド0 — 状態表示「CRITICAL」。赤色灯が回る。次の1発はない。'],
+      [.72, ()=>'最大被弾は4回。それがこの宙域の規定だ。']]},
   };
 
   function fillDom(){
@@ -2408,40 +2496,29 @@ const Guide = (()=>{
         holoWave.rotation.y = tl*3; holoWave.rotation.x = .4 + tl*2; holoWave.position.y = Math.sin(tl*6.3 + 3)*.5;
       }};
   }
-  // ---- 章02 FLIGHT: 岩帯進入 + 実物機体の入力追従デモ ----
+  // ---- 章02 FLIGHT: 大岩を横転回避 → 交差の瞬間で凍結(SPEC-08b) ----
   function buildFlight(){
     const g = new THREE.Group();
-    const rocks = [], geos = Assets.rockGeos(), mats = Assets.rockMats();
-    const NR = IS_TOUCH ? 8 : 12;   // SP軽量化(D-02)
-    for(let i = 0; i < NR; i++){
-      const m = new THREE.Mesh(geos[i%8], mats[i%3]);
-      m.userData.base = {x:(i%2 ? 1 : -1)*(6 + (i*2.3)%9), y:((i*1.7)%6) - 3, z:-10 - (i*4.1)%26, s:.8 + (i%4)*.4};
-      m.scale.setScalar(m.userData.base.s);
-      rocks.push(m); g.add(m);
-    }
-    const shipB = Assets.buildShip();
-    shipB.group.scale.setScalar(0);
-    g.add(shipB.group);
-    return {group:g, rocks, ship:shipB.group,
-      update(tl){
-        for(const m of rocks){
-          const b = m.userData.base;
-          m.position.set(b.x, b.y, b.z + tl*46);
-          m.rotation.y = tl*2 + b.x; m.rotation.x = tl*1.2 + b.y;
-        }
-        const app = sm(tl, .2, .38)*(1 - sm(tl, .82, 1));
-        this.ship.scale.setScalar(app*1.1);
-        this.ship.position.set(mouse.x*2.6, -mouse.y*1.8 - .5, -8);   // ライブデモ(入力連動の意図的例外)
-        this.ship.rotation.z = -mouse.x*.5;
-        this.ship.rotation.x = sm(tl, .55, .8)*Math.sin(tl*18)*.35 - mouse.y*.3;
+    const bigRock = new THREE.Mesh(Assets.rockGeos()[5], Assets.rockMats()[1]);
+    bigRock.scale.setScalar(4.5);
+    g.add(bigRock);
+    return {group:g, bigRock,
+      fz:{f0:.42, f1:.78},
+      update(ta){
+        bigRock.position.set(3.2 - 6.5*ta, .6 - 1.4*ta, -52 + 84*ta);
+        bigRock.rotation.y = 1 + ta*2.4; bigRock.rotation.x = ta*1.6;
+        // 回避バンク: 機体(Sortie)に交差前後だけ横転を加える
+        const b = bell(ta, .3, .54);
+        sortie.ship.position.x += b*1.6;
+        sortie.ship.rotation.z -= b*.75;
       }};
   }
-  // ---- 章03 WEAPONS: コア接近 → トレーサー → 三層爆発(全てtl純関数) ----
+  // ---- 章03 WEAPONS: コア回収→発射→着弾閃光で凍結→解除で三層爆発(SPEC-08b) ----
   function buildWeapons(){
     const g = new THREE.Group();
     const core = Assets.buildCore(); core.scale.setScalar(.55); g.add(core);
     const target = new THREE.Mesh(Assets.rockGeos()[3], Assets.rockMats()[0]);
-    target.position.set(5.5, 1.2, -10); g.add(target);
+    target.position.set(4.5, .8, -14); g.add(target);
     const trGeo = new THREE.CylinderGeometry(.05, .05, 1, 5, 1, true);
     const tracers = [0, 1].map(()=>{
       const m = new THREE.Mesh(trGeo, new THREE.MeshBasicMaterial({color:0x66f6ff,
@@ -2461,31 +2538,45 @@ const Guide = (()=>{
       new THREE.MeshBasicMaterial({color:0x9fe8ff, transparent:true, opacity:0,
         side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false}));
     ring.visible = false; g.add(ring);
-    return {group:g, core, target, tracers, shards, flash, ring, _prev:0,
-      update(tl){
-        core.position.z = -40 + 34*Math.min(1, tl/.3);
-        core.userData.ring1.rotation.y = tl*9;
-        core.userData.ring2.rotation.x = -tl*6;
-        target.visible = tl >= .28 && tl < .62;
-        if(target.visible) target.scale.setScalar(sm(tl, .28, .45)*1.4);
-        const tk = (tl - .5)/.12;
+    return {group:g, core, target, tracers, shards, flash, ring,
+      fz:{f0:.50, f1:.80},
+      edges:[{at:.28, fire:()=>SoundEngine.coreGet()}, {at:.42, fire:()=>SoundEngine.gun()}],
+      onRelease:()=>SoundEngine.explosion(2),
+      update(ta){
+        // コア: 前方から接近し機体位置で消える(回収)
+        core.visible = ta < .28;
+        core.position.set(.8, -.4, -34 + 30*Math.min(1, ta/.28));
+        core.userData.ring1.rotation.y = ta*9;
+        core.userData.ring2.rotation.x = -ta*6;
+        target.visible = ta >= .3 && ta < .55;
+        if(target.visible) target.scale.setScalar(sm(ta, .3, .42)*1.5);
+        // トレーサー: 機体(ワールド)→標的。凍結時は着弾寸前で静止
+        const tk = Math.min(1, Math.max(0, (ta - .42)/.09));
+        const from = new THREE.Vector3().copy(sortie.ship.position).sub(g.position);
         for(let i = 0; i < 2; i++){
           const m = tracers[i];
-          m.visible = tk > 0 && tk < 1;
+          m.visible = tk > 0 && ta < .55;
           if(m.visible){
-            const from = new THREE.Vector3(i ? 2 : -2, -3.5, 0);
-            const dir = target.position.clone().sub(from);
-            m.position.copy(from).addScaledVector(dir, .5);
+            const f2 = from.clone(); f2.x += i ? .6 : -.6; f2.y -= .2;
+            const dir = target.position.clone().sub(f2);
+            m.position.copy(f2).addScaledVector(dir, .5*tk);
             m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
-            m.scale.set(1, dir.length(), 1);
-            m.material.opacity = .8*(1 - tk);
+            m.scale.set(1, dir.length()*tk, 1);
+            m.material.opacity = .85;
           }
         }
-        const e = (tl - .62)/.23;
-        flash.visible = e > 0 && e < .3;
-        if(flash.visible){ flash.position.copy(target.position); flash.scale.setScalar(4 + e*8); flash.material.opacity = .95*(1 - e/.3); }
+        // 着弾閃光: ta=.5で誕生し凍結(静止)。解除後は爆発の一部として拡大
+        flash.visible = ta >= .49 && ta < .62;
+        if(flash.visible){
+          flash.position.copy(target.visible ? target.position : flash.position);
+          flash.position.copy(target.position);
+          flash.scale.setScalar(2 + Math.max(0, ta - .5)*40);
+          flash.material.opacity = .95*(1 - Math.max(0, ta - .5)/.12);
+        }
+        // 三層爆発(解除後 ta .55→.95)
+        const e = (ta - .55)/.4;
         ring.visible = e > 0 && e < 1;
-        if(ring.visible){ ring.position.copy(target.position); ring.scale.setScalar(1 + e*10); ring.material.opacity = .6*(1 - e); }
+        if(ring.visible){ ring.position.copy(target.position); ring.scale.setScalar(1 + e*11); ring.material.opacity = .6*(1 - e); }
         for(const m of shards){
           m.visible = e > 0 && e < 1;
           if(m.visible){
@@ -2494,53 +2585,90 @@ const Guide = (()=>{
             m.rotation.set(e*7 + m.userData.dir.x, e*9, e*5);
           }
         }
-        if(this._prev < .62 && tl >= .62) SoundEngine.explosion(2);   // B-06: 上向きエッジのみ発音
-        this._prev = tl;
       }};
   }
-  // ---- 章04 SURVIVAL: シールド段階破壊 + CRITICAL警告 ----
+  // ---- 章04 SURVIVAL: 激突の瞬間で凍結 → 解除でシールド砕散+CRITICAL(SPEC-08b) ----
   function buildSurvival(){
     const g = new THREE.Group();
-    const shGeo = new THREE.OctahedronGeometry(1.4);
-    const shields = [0, 1, 2].map(i=>{
-      const m = new THREE.Mesh(shGeo, new THREE.MeshBasicMaterial({color:0x00f0ff,
-        transparent:true, opacity:.6, blending:THREE.AdditiveBlending, depthWrite:false}));
-      m.position.set((i-1)*4.2, 0, -10);
-      m.scale.set(1, 1.3, .35);
+    const crashRock = new THREE.Mesh(Assets.rockGeos()[2], Assets.rockMats()[2]);
+    crashRock.scale.setScalar(3);
+    g.add(crashRock);
+    const film = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 2.2),
+      new THREE.MeshBasicMaterial({color:0x00f0ff, transparent:true, opacity:0,
+        side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false}));
+    g.add(film);
+    const cracks = [0, 1, 2].map(i=>{
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(1, .04),
+        new THREE.MeshBasicMaterial({color:0xdfffff, transparent:true, opacity:0,
+          blending:THREE.AdditiveBlending, depthWrite:false}));
+      m.rotation.z = [.5, -.9, 2.2][i];
       g.add(m); return m;
     });
+    const sparks = [];
+    for(let i = 0; i < 8; i++){
+      const m = new THREE.Mesh(new THREE.TetrahedronGeometry(.09),
+        new THREE.MeshBasicMaterial({color:0xfff2c8, transparent:true, opacity:0,
+          blending:THREE.AdditiveBlending, depthWrite:false}));
+      m.userData.dir = new THREE.Vector3(Math.sin(i*2.7), Math.cos(i*2.1), .4).normalize();
+      m.visible = false; g.add(m); sparks.push(m);
+    }
     const frags = [];
-    for(let i = 0; i < 12; i++){
-      const m = new THREE.Mesh(new THREE.TetrahedronGeometry(.35),
+    for(let i = 0; i < 10; i++){
+      const m = new THREE.Mesh(new THREE.TetrahedronGeometry(.3),
         new THREE.MeshBasicMaterial({color:0x00f0ff, transparent:true, opacity:0,
           blending:THREE.AdditiveBlending, depthWrite:false}));
+      m.userData.dir = new THREE.Vector3(Math.sin(i*1.7), Math.cos(i*2.3), Math.sin(i*.9)*.5).normalize();
       m.visible = false; g.add(m); frags.push(m);
     }
-    const TH = [.3, .45, .6];
-    return {group:g, shields, frags, vign: document.getElementById('ch4-vign'), _prev:0,
-      update(tl){
-        shields.forEach((m, i)=>{
-          m.visible = tl < TH[i];
-          if(m.visible){ m.rotation.y = tl*3 + i; m.material.opacity = .4 + .25*Math.sin(tl*20 + i*2); }
-          for(let j = 0; j < 4; j++){
-            const f = frags[i*4 + j], k = (tl - TH[i])/.15;
-            f.visible = k > 0 && k < 1;
-            if(f.visible){
-              f.position.set((i-1)*4.2 + Math.sin(j*2.6)*k*6, Math.cos(j*1.8)*k*5, -10 + k*3);
-              f.material.opacity = .8*(1 - k);
-              f.rotation.set(k*8 + j, k*6, 0);
-            }
+    return {group:g, crashRock, film, cracks, sparks, frags,
+      vign: document.getElementById('ch4-vign'),
+      fz:{f0:.45, f1:.80},
+      camOff:{x:-.6, y:.4},
+      edges:[{at:.43, fire:()=>SoundEngine.impact(false)}],
+      onRelease:()=>SoundEngine.impact(true),
+      update(ta){
+        // 機体前面の位置(ローカル)
+        const from = new THREE.Vector3().copy(sortie.ship.position).sub(g.position);
+        const contact = from.clone(); contact.z -= 1.6; contact.x -= .3;
+        crashRock.position.set(from.x - 1.2 - (1 - ta)*4, from.y + .3, from.z - 3 - (1 - Math.min(1, ta/.45))*52);
+        crashRock.rotation.y = 2 + ta*2;
+        // シールド光膜: 接近で顕在化、接触で最大
+        film.position.copy(from); film.position.z -= 1.3;
+        film.material.opacity = sm(ta, .28, .44)*.55 + bell(ta, .4, .5)*.25;
+        // 亀裂: 接触直前〜凍結で走り始めた状態で静止
+        cracks.forEach((m, i)=>{
+          m.position.copy(contact); m.position.x += [.2, -.15, .05][i]; m.position.y += [.1, -.05, -.18][i];
+          const k = sm(ta, .43, .47);
+          m.scale.set(k*(.7 + i*.2), 1, 1);
+          m.material.opacity = k*.85;
+        });
+        // 火花: 接触で生まれ、凍結中は宙で静止
+        sparks.forEach(m=>{
+          const k = (ta - .43)/.09;
+          m.visible = k > 0 && k < 1;
+          if(m.visible){
+            m.position.copy(contact).addScaledVector(m.userData.dir, k*1.4);
+            m.material.opacity = .95*(1 - k*.5);
           }
         });
-        const warn = sm(tl, .65, .78)*(1 - sm(tl, .9, 1));
-        const blink = REDUCED ? 1 : (.7 + .3*Math.sin(tl*46));   // tl駆動明滅(B-05)
+        // 結末(解除後): 光膜が砕けて散る + 赤色警告
+        const fr = (ta - .5)/.35;
+        film.visible = fr < .4;
+        frags.forEach(m=>{
+          m.visible = fr > 0 && fr < 1;
+          if(m.visible){
+            m.position.copy(from).addScaledVector(m.userData.dir, fr*7);
+            m.position.z -= 1.3;
+            m.material.opacity = .8*(1 - fr);
+            m.rotation.set(fr*8, fr*6, 0);
+          }
+        });
+        const warn = sm(ta, .5, .62)*(1 - sm(ta, .85, 1));
+        const blink = REDUCED ? 1 : (.7 + .3*Math.sin(ta*46));
         this.vign.style.opacity = (warn*blink).toFixed(3);
-        for(let i = 0; i < 3; i++)
-          if(this._prev < TH[i] && tl >= TH[i]) SoundEngine.impact(i === 2);
-        this._prev = tl;
       }};
   }
-  // 章のt範囲はDOM実測から導出(レイアウト変更に自動追従) + ステージをカメラ通過位置へ配置
+  // 章のt範囲はDOM実測から導出(レイアウト変更に自動追従) + ステージ/岩帯をカメラ回廊へ配置
   function measure(){
     const max = document.documentElement.scrollHeight - innerHeight;
     if(max <= 0) return;
@@ -2548,43 +2676,77 @@ const Guide = (()=>{
       const el = document.getElementById('ch-' + d.id);
       d.t0 = el.offsetTop/max;
       d.t1 = Math.min(1, (el.offsetTop + el.offsetHeight - innerHeight)/max);
-      const cam = Tl.camAt((d.t0 + d.t1)/2);
+      const st0 = stages[d.id];
+      const tRef = (st0 && st0.fz) ? d.t0 + (d.t1 - d.t0)*st0.fz.f0 : (d.t0 + d.t1)/2;
+      const cam = Tl.camAt(tRef);   // フリーズ章は凍結時カメラ位置を基準に配置
       // SP縦画面は3D主役を上1/3の安全域へ(D-01)
       stages[d.id].group.position.set(cam.x, cam.y + (IS_TOUCH ? 2.4 : 0), cam.z - 26);
     }
+    // 岩帯を回廊全域に配置(E2-02。位置は固定=決定的)
+    const z0 = Tl.camAt(0).z - 34, z1 = Tl.camAt(1).z - 10;
+    sortie.rocks.forEach((m, i)=>{
+      const u = m.userData.u;
+      m.position.set(Math.cos(u.a)*u.r, Math.sin(u.a)*u.r*.5, z0 + (z1 - z0)*(i + .5)/sortie.rocks.length);
+    });
+    // SHIPキーフレーム: フリーズ章のイベント点で機体姿勢を寄せる(E2-04)
+    const ev = id=>{ const d = defs.find(x=>x.id === id); const st = stages[id];
+      return d && st && st.fz ? d.t0 + (d.t1 - d.t0)*st.fz.f0 : null; };
+    const tF = ev('flight'), tW = ev('weapons'), tS = ev('survival');
+    sortie.SHIP = [{t:0, x:0, y:-1, dz:-16, roll:0}];
+    if(tF) sortie.SHIP.push({t:tF, x:1.4, y:-.7, dz:-15, roll:-.55});
+    if(tW) sortie.SHIP.push({t:tW, x:-.2, y:-.9, dz:-15, roll:0});
+    if(tS) sortie.SHIP.push({t:tS, x:-.5, y:-.6, dz:-13, roll:.25});
+    sortie.SHIP.push({t:1, x:0, y:-1, dz:-16, roll:0});
+    sortie.SHIP.sort((a, b)=>a.t - b.t);
   }
   function setup(){
     fillDom();
+    buildSortie();
+    Tl.register({id:'_sortie', t0:0, t1:1, update: updateSortie});   // 最初=機体の基準姿勢
     const builders = {briefing:buildBriefing, flight:buildFlight, weapons:buildWeapons, survival:buildSurvival};
     for(const id of Object.keys(builders)){
       const st = builders[id]();
       st.group.visible = false;
       scene.add(st.group);
       stages[id] = st;
-      const d = {id, t0:0, t1:1};
+      const d = {id, t0:0, t1:1, _fz:0, _prev:0, camOff: st.camOff || null};
       defs.push(d);
       const el = document.getElementById('ch-' + id);
       const lines = ()=>el.querySelectorAll('.ch-line');
       Tl.register({id, get t0(){ return d.t0; }, get t1(){ return d.t1; },
         update(tl){
           if(red()){
-            // D-03: 静的縮退 — 章内では中間完成形を固定表示し、全行を即時点灯(欠落情報ゼロ)
+            // 静的縮退: フリーズ帧(=完成形)を固定表示し全行即時点灯(欠落情報ゼロ)
             const on = tl > 0 && tl < 1;
             st.group.visible = on;
-            st.update(on ? .45 : 0);
+            const taR = st.fz ? st.fz.f0 : .45;
+            d._fz = 0;
+            st.update(on ? taR : 0);
             lines().forEach(L=>L.classList.toggle('lit', on));
             el.querySelector('.ch-head').classList.toggle('lit', on);
             return;
           }
           st.group.visible = tl > 0 && tl < 1;
-          st.update(tl);
+          const ta = st.fz ? warp(tl, st.fz.f0, st.fz.f1) : tl;
+          d._fz = st.fz ? fzDepth(tl, st.fz.f0, st.fz.f1) : 0;
+          st.update(ta);
+          // エッジ音(B-06方式): 章内イベント / フリーズ進入(f0) / 解除(f1)+結末SE
+          if(st.edges) for(const e of st.edges)
+            if(d._prev < e.at && tl >= e.at) e.fire();
+          if(st.fz){
+            if(d._prev < st.fz.f0 && tl >= st.fz.f0) SoundEngine.ui('hold');
+            if(d._prev < st.fz.f1 && tl >= st.fz.f1){ SoundEngine.ui('sync'); if(st.onRelease) st.onRelease(); }
+          }
+          d._prev = tl;
           lines().forEach(L=>L.classList.toggle('lit', tl >= +L.dataset.on));
           el.querySelector('.ch-head').classList.toggle('lit', tl >= .02 && tl < 1);
         }});
     }
+    Tl.register({id:'_fx', t0:0, t1:1, update: applyFx});   // 最後=凍結演出の集約
     measure();
   }
   return {setup, measure, info: ()=>defs.map(d=>({id:d.id, t0:d.t0, t1:d.t1})), stage: id=>stages[id],
+    warp, fzDepth, sortie, camMod, gT,
     _forceReduced(v){ redOverride = v; }};
 })();
 

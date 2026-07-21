@@ -7,8 +7,7 @@
   if(!G){ window.__PDRESULTS = R; console.table(R); return R; }
 
   // ---- D-02: SP軽量化の構造(実行環境に応じた分岐が入っていること) ----
-  const rocks = G.stage('flight').rocks;
-  t('D-02 岩数のデバイス分岐', rocks.length === (V.isTouch ? 8 : 12), 'rocks='+rocks.length);
+  t('D-02 岩帯のデバイス分岐', G.sortie.rocks.length === (V.isTouch ? 16 : 26), 'rocks='+G.sortie.rocks.length);
   t('D-02b ページブルーム分岐', V.isTouch ? !V.pageFx.bloom : !!V.pageFx.bloom);
 
   // ---- D-03: reduced-motion縮退(テストフックで強制) ----
@@ -17,12 +16,12 @@
   Tl._setT(f.t0 + (f.t1-f.t0)*.1); Tl.update(.016);   // 章序盤でも
   const allLit = document.querySelectorAll('#ch-flight .ch-line.lit').length === 3;
   const visible = G.stage('flight').group.visible;
-  const shipScaleA = G.stage('flight').ship.scale.x;
-  Tl._setT(f.t0 + (f.t1-f.t0)*.9); Tl.update(.016);   // 章終盤でも同じ完成形
-  const shipScaleB = G.stage('flight').ship.scale.x;
+  const posA = G.stage('flight').bigRock.position.toArray().join(',');
+  Tl._setT(f.t0 + (f.t1-f.t0)*.9); Tl.update(.016);   // 章終盤でも同じ凍結フレーム
+  const posB = G.stage('flight').bigRock.position.toArray().join(',');
   G._forceReduced(false);
-  t('D-03 縮退時: 全行即時点灯+静的表示', allLit && visible && Math.abs(shipScaleA - shipScaleB) < .001,
-    `lit3=${allLit} scale ${shipScaleA.toFixed(2)}=${shipScaleB.toFixed(2)}`);
+  t('D-03 縮退時: 全行即時点灯+凍結フレーム固定', allLit && visible && posA === posB,
+    `lit3=${allLit} static=${posA === posB}`);
   G._forceReduced(null);
   Tl._setT(0); Tl.update(.016);
 

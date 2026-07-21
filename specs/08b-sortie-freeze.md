@@ -1,6 +1,6 @@
 # SPEC 08b — Phase E2: Sortieレイヤー＋タイムワープ＋フリーズビート章（02〜04）
 
-状態: **Draft** ／ 親: [SPEC-08](08-action-sequence.md) ／ 前提: 08a Verified ／ 外部素材: 不要
+状態: **Verified (2026-07-20 phaseE2 14/14・run-all 139テスト ALL GREEN。凍結中はgT()でカメラ/機体のグローバル時間も平坦化する設計に発展)** ／ 親: [SPEC-08](08-action-sequence.md) ／ 前提: 08a Verified ／ 外部素材: 不要
 
 ## 1. 目的
 
