@@ -473,25 +473,9 @@ body.no-cursor #cursor{
   <section class="chapter" id="ch-survival"><div class="ch-pin"></div></section>
   <div id="ch4-vign" aria-hidden="true"></div>
 <!-- SPEC-07b: 訓練章(見出し/本文はJSのCOPYテーブルから注入 — 操作語のPC/SP出し分けのため) -->
-  <section id="gallery">
-    <div class="reveal">
-      <div class="sec-tag">CLEARANCE 05 / 06 — 帯を抜ける</div>
-      <h2>帯を抜けた。宙域を選べ。</h2>
-      <p class="lead">視界が開ける。正面の惑星が次の航行宙域だ — チップを選べば、世界が即座に応答する。</p>
-      <div class="planet-ui">
-        <div class="planet-chip active" data-planet="aqua">AQUA-7</div>
-        <div class="planet-chip" data-planet="ember">EMBER-3</div>
-        <div class="planet-chip" data-planet="ion">ION-X</div>
-      </div>
-      <div id="planet-data">
-        <b>AQUA-7 // 氷海惑星</b>
-        全球が液体メタンの海に覆われた惑星。地表温度 -182℃。極軌道上に複素リングを持ち、シアンの大気光が観測される。
-      </div>
-    </div>
-  </section>
   <section id="ch-launch">
     <div class="reveal">
-      <div class="sec-tag">LAUNCH DECK 06 / 06 — 出撃甲板</div>
+      <div class="sec-tag">LAUNCH DECK 05 / 05 — 出撃甲板</div>
       <h2>次はお前が飛ぶ番だ。</h2>
       <p class="lead">訓練修了。発進口は開いている。ベスト記録はこの端末に保存される。</p>
       <div class="deck">
@@ -744,13 +728,12 @@ addEventListener('scroll', ()=>{
 
 // SPEC-07c: HUDの章表記(セクション実位置と連動, GDE-06)
 const SECTORS = [
-  ['hero',        'GATE 00 / 06 — 着任確認'],
-  ['ch-sortie',   'SORTIE 01 / 06 — 出撃'],
-  ['ch-flight',   'BRIEFING 02 / 06 — 操縦訓練'],
-  ['ch-weapons',  'BRIEFING 03 / 06 — 武装と資源'],
-  ['ch-survival', 'BRIEFING 04 / 06 — 生存規定'],
-  ['gallery',     'CLEARANCE 05 / 06 — 帯を抜ける'],
-  ['ch-launch',   'LAUNCH DECK 06 / 06 — 出撃準備完了'],
+  ['hero',        'GATE 00 / 05 — 着任確認'],
+  ['ch-sortie',   'SORTIE 01 / 05 — 出撃'],
+  ['ch-flight',   'BRIEFING 02 / 05 — 操縦訓練'],
+  ['ch-weapons',  'BRIEFING 03 / 05 — 武装と資源'],
+  ['ch-survival', 'BRIEFING 04 / 05 — 生存規定'],
+  ['ch-launch',   'LAUNCH DECK 05 / 05 — 出撃準備完了'],
 ];
 function updateSector(){
   const y = scrollY + innerHeight*.5;
@@ -969,7 +952,7 @@ document.querySelectorAll('.planet-chip').forEach(chip=>{
 document.getElementById('send').addEventListener('click', ()=>{
   const name = document.getElementById('f-name').value.trim() || 'UNKNOWN';
   const out = document.getElementById('send-msg');
-  const seq = [`> ENCRYPTING SIGNAL FROM ${name.toUpperCase()}...`, '> ROUTING VIA RELAY STATION K-9...', `> TRANSMISSION COMPLETE. 応答まで推定 4.2 光年。`];
+  const seq = [`> ENCRYPTING SIGNAL FROM ${name.toUpperCase()}...`, '> ROUTING VIA RELAY STATION K-9...', `> TRANSMISSION COMPLETE. 宛先まで 4.2 光年 — 応答は早くても 8.4 年後だ。`];
   out.textContent = '';
   let i = 0;
   (function next(){
@@ -2450,20 +2433,20 @@ const Guide = (()=>{
   const sm = (v, a, b)=>{ const k = Math.min(1, Math.max(0, (v-a)/(b-a))); return k*k*(3-2*k); };
 
   const COPY = {
-    sortie: {num:'SORTIE 01 / 06', title:'SORTIE', sub:'出撃', lines:[
+    sortie: {num:'SORTIE 01 / 05', title:'SORTIE', sub:'出撃', lines:[
       [.25, ()=>'射出確認。ここから先、スクロールはお前の推進力だ。'],
       [.55, ()=>'任務はひとつ — 小惑星帯を突破する探査任務、ASTEROID RUN。'],
       [.8,  ()=>'岩帯まで20秒。訓練を始める。']]},
-    flight: {num:'BRIEFING 02 / 06', title:'FLIGHT', sub:'操縦訓練', lines:[
+    flight: {num:'BRIEFING 02 / 05', title:'FLIGHT', sub:'操縦訓練', lines:[
       [.46, ()=>`機体は${pick('マウス','指')}に追従する。画面の行きたい場所へ${pick('カーソルを運べ','指を滑らせろ')}。`],
       [.52, ()=>'上下の機動は左右より機敏だ。縦の回避を恐れるな。'],
       [.58, ()=>'訓練空域を抜ける。次は武装の説明だ。']]},
-    weapons: {num:'BRIEFING 03 / 06', title:'WEAPONS', sub:'武装と資源', lines:[
+    weapons: {num:'BRIEFING 03 / 05', title:'WEAPONS', sub:'武装と資源', lines:[
       [.1,  ()=>'◆エネルギーコア。回収すればスコア×500。だが本当の価値は弾薬であることだ。'],
       [.54, ()=>`${pick('左クリック','FIREボタン')}で機関砲。コアを1つ消費し、正面の岩を撃ち砕く。`],
       [.6,  ()=>'照準は自動でロックする。囲まれたものは、壊せるものだ。'],
       [.68, ()=>'空撃ちはコアを消費しない。残弾ゼロの警告「NO CORE」を見逃すな。']]},
-    survival: {num:'BRIEFING 04 / 06', title:'SURVIVAL', sub:'生存規定', lines:[
+    survival: {num:'BRIEFING 04 / 05', title:'SURVIVAL', sub:'生存規定', lines:[
       [.48, ()=>'— 今、お前は岩に触れた。シールドは3枚。衝突を3度だけ肩代わりする。'],
       [.55, ()=>'砕けるたび、船体は裸に近づく。速度も20%失われる。'],
       [.62, ()=>'シールド0 — 状態表示「CRITICAL」。赤色灯が回る。次の1発はない。'],
@@ -2693,13 +2676,14 @@ const Guide = (()=>{
     sortie.SHIP.push({t:.96, x:0, y:-1, dz:-17, roll:0});
     sortie.SHIP.push({t:1, x:0, y:.4, dz:-30, roll:0});   // 帰投: ベイへ離脱(E3-04)
     sortie.SHIP.sort((a, b)=>a.t - b.t);
-    // CLEARANCE: 岩帯の減衰区間 + 惑星をコース正面へ昇格(E3-03)
-    const gal = document.getElementById('gallery');
-    if(gal){
-      const g0 = gal.offsetTop/max, g1 = Math.min(1, (gal.offsetTop + gal.offsetHeight)/max);
-      sortie.clear = {a: Math.max(0, g0 - .06), b: (g0 + g1)/2};
+    // 帯を抜ける演出(CLEARANCEセクションはFBで撤去 — 岩帯減衰+惑星は景観として維持)
+    const deck = document.getElementById('ch-launch');
+    if(deck){
+      const d0 = deck.offsetTop/max;
+      const sv2 = defs.find(x=>x.id === 'survival');
+      sortie.clear = {a: sv2 ? sv2.t1 : Math.max(0, d0 - .12), b: Math.min(1, d0 + .02)};
       planetGroup.position.x = 6;
-      planetGroup.position.z = Tl.camAt((g0 + g1)/2).z - 72;
+      planetGroup.position.z = Tl.camAt(Math.min(1, d0)).z - 60;
     }
   }
   function setup(){
@@ -2725,8 +2709,8 @@ const Guide = (()=>{
             const taR = st.fz ? st.fz.f0 : .45;
             d._fz = 0;
             st.update(on ? taR : 0);
-            lines().forEach(L=>L.classList.toggle('lit', on));
-            el.querySelector('.ch-head').classList.toggle('lit', on);
+            lines().forEach(L=>L.classList.toggle('lit', on || tl >= 1));
+            el.querySelector('.ch-head').classList.toggle('lit', on || tl >= 1);
             return;
           }
           st.group.visible = tl > 0 && tl < 1;
@@ -2742,7 +2726,7 @@ const Guide = (()=>{
           }
           d._prev = tl;
           lines().forEach(L=>L.classList.toggle('lit', tl >= +L.dataset.on));
-          el.querySelector('.ch-head').classList.toggle('lit', tl >= .02 && tl < 1);
+          el.querySelector('.ch-head').classList.toggle('lit', tl >= .02);   // 退場までタイトル点灯維持(FB対応)
         }});
     }
     Tl.register({id:'_fx', t0:0, t1:1, update: applyFx});   // 最後=凍結演出の集約

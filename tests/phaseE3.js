@@ -25,18 +25,19 @@
 
   // E3-03: CLEARANCEで岩帯が減衰し、惑星がコース上に居る
   const rockScaleAt = tt=>{ Tl._setT(tt); Tl.update(.016); return G.sortie.rocks[0].scale.x; };
-  const mid = .5, late = (ch('survival').t1 + 1)/2;
-  const s1 = rockScaleAt(mid), s2 = rockScaleAt(.97);
-  t('E3-03 岩帯減衰', s2 < s1*.3, `scale ${s1.toFixed(2)}→${s2.toFixed(2)}`);
+  const cl = G.sortie.clear;
+  const s1 = rockScaleAt(Math.max(0, cl.a - .05));   // 減衰開始前(レイアウト相対)
+  const s2 = rockScaleAt(Math.min(1, cl.b + .02));   // 減衰完了後
+  t('E3-03 岩帯減衰', s1 > 0 && s2 < s1*.3, `scale ${s1.toFixed(2)}→${s2.toFixed(2)} clear=${cl.a.toFixed(2)}-${cl.b.toFixed(2)}`);
 
   // E3-05: HUDラベル
   document.documentElement.style.scrollBehavior = 'auto';
   const secAt = id=>{ const el = document.getElementById(id);
     window.scrollTo(0, Math.max(0, el.offsetTop + 10)); dispatchEvent(new Event('scroll'));
     return document.getElementById('hud-status').textContent; };
-  const lS = secAt('ch-sortie'), lG = secAt('gallery');
+  const lS = secAt('ch-sortie'), lL = secAt('ch-launch');
   window.scrollTo(0, 0); dispatchEvent(new Event('scroll'));
-  t('E3-05 HUD最終化', lS.includes('SORTIE') && lG.includes('CLEARANCE'), `${lS} | ${lG}`);
+  t('E3-05 HUD最終化', lS.includes('SORTIE 01 / 05') && lL.includes('LAUNCH DECK 05 / 05'), `${lS} | ${lL}`);
 
   // E3-07: reduced縮退が新構成でも成立
   G._forceReduced(true);
@@ -45,6 +46,18 @@
   const allLit = document.querySelectorAll('#ch-flight .ch-line.lit').length === 3;
   G._forceReduced(null);
   t('E3-07 reduced縮退', allLit);
+
+  // FB対応: 章タイトルは章終端(tl=1)でも点灯維持(退場までスクロールと共に流れる)
+  const fch = ch('flight');
+  go(fch, 1.0);
+  t('FB-01 タイトル点灯維持', document.querySelector('#ch-flight .ch-head').classList.contains('lit'));
+  go(fch, .01);
+  // FB対応: 光年表現の修正
+  document.getElementById('f-name').value = 'T';
+  document.getElementById('send').click();
+  await new Promise(r=>setTimeout(r, 2000));
+  const seqTxt = document.getElementById('send-msg').textContent;
+  t('FB-03 光年表現', !document.documentElement.outerHTML.includes('応答まで推定 4.2 光年'));
 
   Tl._setT(0); Tl.update(.016);
   window.__PE3RESULTS = R;

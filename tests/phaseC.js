@@ -7,7 +7,7 @@
   if(!V){ window.__PCRESULTS = R; console.table(R); return R; }
 
   // ---- 構成(C-01/07): 章の順序と旧セクション廃止 ----
-  const order = ['hero','ch-sortie','ch-flight','ch-weapons','ch-survival','gallery','ch-launch','contact'];
+  const order = ['hero','ch-sortie','ch-flight','ch-weapons','ch-survival','ch-launch','contact'];
   const tops = order.map(id=>{ const el = document.getElementById(id); return el ? el.offsetTop : -1; });
   t('C-01 全章存在', tops.every(v=>v >= 0), JSON.stringify(tops));
   t('C-01b 章順序', tops.every((v,i)=>i === 0 || v >= tops[i-1]), tops.join('<'));
@@ -19,9 +19,7 @@
   t('C-02 sortie登録', info.length === 4 && info[0].id === 'sortie', info.map(d=>d.id).join(','));
 
   // ---- NAVIGATION(C-03) ----
-  const gal = document.getElementById('gallery').textContent;
-  t('C-03 CLEARANCE化', gal.includes('CLEARANCE')
-    && document.querySelectorAll('#gallery .planet-chip').length === 3);
+  t('C-03 CLEARANCE撤去(FB対応)', !document.getElementById('gallery'));
 
   // ---- LAUNCH DECK(C-04) ----
   localStorage.setItem('vg-ast-best', '12345');
