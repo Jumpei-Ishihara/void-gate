@@ -195,8 +195,7 @@ h2{
 .card p{font-size:13px;color:var(--dim);line-height:1.9;font-weight:300}
 .card .glowline{position:absolute;top:0;left:20px;right:0;height:1px;background:linear-gradient(90deg,var(--cyan),transparent);opacity:.5}
 
-/* ===== 惑星ギャラリー ===== */
-#gallery .planet-ui{display:flex;gap:18px;margin-top:40px;flex-wrap:wrap}
+/* ===== 惑星チップ(ゲームの視点選択vchipが流用) ===== */
 .planet-chip{
   padding:12px 26px;font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:.25em;
   border:1px solid rgba(255,255,255,.14);color:var(--dim);background:rgba(8,12,32,.5);
@@ -205,12 +204,6 @@ h2{
 }
 .planet-chip:hover{color:#fff;border-color:var(--cyan)}
 .planet-chip.active{color:#000;background:var(--cyan);border-color:var(--cyan);box-shadow:0 0 22px rgba(0,240,255,.5)}
-#planet-data{
-  margin-top:34px;max-width:480px;padding:26px;background:var(--panel);
-  border-left:2px solid var(--cyan);backdrop-filter:blur(10px);
-  font-size:13px;line-height:2;color:var(--dim);
-}
-#planet-data b{color:#fff;font-family:'Orbitron',sans-serif;letter-spacing:.1em;display:block;margin-bottom:8px}
 
 /* ===== CONTACT ===== */
 #contact .terminal{
@@ -629,16 +622,9 @@ const nebula = new THREE.Points(nebGeo, new THREE.PointsMaterial({
 scene.add(nebula);
 
 /* ---------- 惑星 + 大気 + リング ---------- */
+// 背景惑星の色(CLEARANCE撤去により選択UIは廃止、aquaを固定採用)
 const PLANETS = {
-  aqua:  {surf:0x0e4d6e, glow:0x00f0ff, ring:0x7feaff,
-    label:'AQUA-7 // 氷海惑星',
-    desc:'全球が液体メタンの海に覆われた惑星。地表温度 -182℃。極軌道上に複素リングを持ち、シアンの大気光が観測される。'},
-  ember: {surf:0x6e2a0e, glow:0xff7a2e, ring:0xffb37f,
-    label:'EMBER-3 // 溶岩惑星',
-    desc:'地殻の70%が活動的なマグマ帯。恒星に近い軌道を高速公転しており、夜側でも地表が赤熱して輝く。'},
-  ion:   {surf:0x3a1466, glow:0xff2ec4, ring:0xc77fff,
-    label:'ION-X // 電離惑星',
-    desc:'強磁場により大気全体がプラズマ化した異形の惑星。マゼンタのオーロラが全球を覆い、電波嵐が絶えない。'}
+  aqua: {surf:0x0e4d6e, glow:0x00f0ff, ring:0x7feaff}
 };
 const planetGroup = new THREE.Group();
 planetGroup.position.set(46, 6, -190);
@@ -925,28 +911,6 @@ setInterval(()=>{
   });
 }, 4200);
 
-/* ---------- 惑星セレクタ ---------- */
-document.querySelectorAll('.planet-chip').forEach(chip=>{
-  chip.addEventListener('click', ()=>{
-    document.querySelectorAll('.planet-chip').forEach(c=>c.classList.remove('active'));
-    chip.classList.add('active');
-    const p = PLANETS[chip.dataset.planet];
-    // 色をトゥイーン
-    const fromS = surfMat.color.clone(), toS = new THREE.Color(p.surf);
-    const fromG = atmoMat.uniforms.glowColor.value.clone(), toG = new THREE.Color(p.glow);
-    const fromR = ringMat.color.clone(), toR = new THREE.Color(p.ring);
-    const start = performance.now();
-    (function tween(){
-      const k = Math.min(1, (performance.now()-start)/900);
-      const e = 1-Math.pow(1-k, 3);
-      surfMat.color.lerpColors(fromS, toS, e);
-      atmoMat.uniforms.glowColor.value.lerpColors(fromG, toG, e);
-      ringMat.color.lerpColors(fromR, toR, e);
-      if(k < 1) requestAnimationFrame(tween);
-    })();
-    document.getElementById('planet-data').innerHTML = `<b>${p.label}</b>${p.desc}`;
-  });
-});
 
 /* ---------- 交信ターミナル ---------- */
 document.getElementById('send').addEventListener('click', ()=>{
