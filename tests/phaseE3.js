@@ -56,8 +56,10 @@
   document.getElementById('f-name').value = 'T';
   document.getElementById('send').click();
   await new Promise(r=>setTimeout(r, 2000));
-  const seqTxt = document.getElementById('send-msg').textContent;
-  t('FB-03 光年表現', !document.documentElement.outerHTML.includes('応答まで推定 4.2 光年'));
+  const html = document.documentElement.outerHTML;
+  t('FB-03 光年表現', html.includes('送信先まで推定 4.2 光年')
+    && !html.includes('応答まで推定 4.2 光年') && !html.includes('8.4 年後'),
+    '光年は距離の単位として使用');
 
   Tl._setT(0); Tl.update(.016);
   window.__PE3RESULTS = R;

@@ -916,7 +916,7 @@ setInterval(()=>{
 document.getElementById('send').addEventListener('click', ()=>{
   const name = document.getElementById('f-name').value.trim() || 'UNKNOWN';
   const out = document.getElementById('send-msg');
-  const seq = [`> ENCRYPTING SIGNAL FROM ${name.toUpperCase()}...`, '> ROUTING VIA RELAY STATION K-9...', `> TRANSMISSION COMPLETE. 宛先まで 4.2 光年 — 応答は早くても 8.4 年後だ。`];
+  const seq = [`> ENCRYPTING SIGNAL FROM ${name.toUpperCase()}...`, '> ROUTING VIA RELAY STATION K-9...', `> TRANSMISSION COMPLETE. 送信先まで推定 4.2 光年。`];
   out.textContent = '';
   let i = 0;
   (function next(){
