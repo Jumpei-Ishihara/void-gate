@@ -2415,7 +2415,8 @@ const Guide = (()=>{
   const bell = (v, a, b)=>{ const m = (a + b)/2; return sm(v, a, m)*(1 - sm(v, m, b)); };
 
   // ===== SPEC-08b: Sortieレイヤー(全章連続の1機 + 共通岩帯) =====
-  const sortie = {ship:null, parts:null, rocks:[], SHIP:[{t:0, x:0, y:-1, dz:-16, roll:0}, {t:1, x:0, y:-1, dz:-16, roll:0}]};
+  const sortie = {ship:null, parts:null, rocks:[], headlight:null, hlTarget:null,
+    SHIP:[{t:0, x:0, y:-1, dz:-16, roll:0}, {t:1, x:0, y:-1, dz:-16, roll:0}]};
   const fxState = {fz:0, cam:{x:0, y:0}};
   function buildSortie(){
     const sb = Assets.buildShip();
@@ -2431,6 +2432,10 @@ const Guide = (()=>{
       m.scale.setScalar(m.userData.u.s);
       scene.add(m); sortie.rocks.push(m);
     }
+    // 機体の照明: すれ違う岩は機体の真横に来るため前方円錐では当たらない。
+    // 距離減衰する点光源で機体周囲(近距離)だけを照らし、接近した岩が明るく浮かぶようにする
+    sortie.headlight = new THREE.PointLight(0xcce9ff, 200, 42, 2.0);
+    scene.add(sortie.headlight);
   }
   function shipAt(t){
     const K = sortie.SHIP;
@@ -2447,6 +2452,14 @@ const Guide = (()=>{
     const mx = mouse.x*(1 - fz)*.9, my = -mouse.y*(1 - fz)*.7;   // 微追従(凍結中は停止)
     sortie.ship.position.set(cam.x + sp.x + mx, cam.y + sp.y + my, cam.z + sp.dz);
     sortie.ship.rotation.set(my*.4, 0, sp.roll - mx*.5);
+    if(sortie.headlight){
+      // 機体のやや前方(進行方向=カメラから離れる向き)に光源を置き、
+      // 機体自身の白飛びを避けつつ、すれ違う岩を照らす
+      const p = sortie.ship.position;
+      const dx = p.x - cam.x, dy = p.y - cam.y, dz = p.z - cam.z;
+      const len = Math.hypot(dx, dy, dz) || 1;
+      sortie.headlight.position.set(p.x + dx/len*6, p.y + dy/len*6 + .5, p.z + dz/len*6);
+    }
     const ex = .9 + Math.sin(t*46)*.08;   // 排気の脈動(t純関数)
     sortie.parts.exhaust.forEach(e=>e.scale.set(.9, 1.6*ex, 1));
     const clear = sortie.clear ? sm(t, sortie.clear.a, sortie.clear.b) : 0;   // 帯を抜ける(E3-03)

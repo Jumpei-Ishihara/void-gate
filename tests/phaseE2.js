@@ -133,6 +133,53 @@
   t('FB-04b 機体が画面内(PC)', framePC.ok, `ndc=(${framePC.x}, ${framePC.y})`);
   t('FB-04c 機体が画面内(SP縦)', frameSP.ok, `ndc=(${frameSP.x}, ${frameSP.y})`);
 
+  // ---- FB: サイト背景の機体照明(近くの岩が明るくなる/機体は白飛びしない) ----
+  const hl = G.sortie.headlight;
+  t('LIGHT-S1 照明あり', !!hl && hl.isPointLight === true && hl.distance > 0,
+    hl ? `${hl.type} int=${hl.intensity} dist=${hl.distance}` : 'なし');
+  if(hl){
+    const cmp = V.pageFx.composer, RD = cmp.renderer, gl = RD.getContext();
+    const gainAt = (id, k)=>{
+      const c2 = ch(id);
+      Tl._setT(c2.t0 + (c2.t1 - c2.t0)*k); Tl.update(.016);
+      for(let i = 0; i < 200; i++) V.pageFx.stepCamera();
+      Tl.update(.016);
+      // 測定領域は「機体周辺」に取る(章により遠景惑星が中央を占め平均が薄まるため)
+      const cam2 = V.pageFx.camera;
+      cam2.updateMatrixWorld();
+      const nd = G.sortie.ship.position.clone().project(cam2);
+      const sample = ()=>{ cmp.render();
+        const w = RD.domElement.width, h = RD.domElement.height, bw = 240, bh = 180;
+        const cx = Math.round((nd.x*.5 + .5)*w), cy = Math.round((nd.y*.5 + .5)*h);
+        const x0 = Math.max(0, Math.min(w - bw, cx - (bw>>1)));
+        const y0 = Math.max(0, Math.min(h - bh, cy - (bh>>1)));
+        const buf = new Uint8Array(bw*bh*4);
+        gl.readPixels(x0, y0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+        let sum = 0, hot = 0;
+        for(let i = 0; i < buf.length; i += 4){
+          sum += buf[i]+buf[i+1]+buf[i+2];
+          if(buf[i] > 250 && buf[i+1] > 250 && buf[i+2] > 250) hot++;
+        }
+        return {avg: sum/(bw*bh*3), blown: hot/(bw*bh)};
+      };
+      const on = sample(); const keep = hl.intensity; hl.intensity = 0;
+      const off = sample(); hl.intensity = keep;
+      return {gain: on.avg - off.avg, blown: on.blown};
+    };
+    // FLIGHT凍結点は「大岩が機体のすぐ横にある」状況＝近接照明の検証に最適。
+    // SURVIVAL凍結点は自発光のシールド光膜が前面を覆うためライト寄与が見えない
+    // (演出として正しい状態)ので、白飛びチェックのみ対象とする
+    const gF = gainAt('flight', .6), gS = gainAt('survival', .6);
+    t('LIGHT-S2 近接時に明るくなる', gF.gain > 10,
+      `flight凍結+${gF.gain.toFixed(1)} (survival+${gS.gain.toFixed(1)}=光膜が前面のため対象外)`);
+    t('LIGHT-S3 白飛びしない', gF.blown < .08 && gS.blown < .08,
+      `白飛び率 flight=${(gF.blown*100).toFixed(1)}% survival=${(gS.blown*100).toFixed(1)}%`);
+    // 光源は機体より前方(進行方向)にあり機体自身を至近距離で焼かない
+    const p = G.sortie.ship.position, cm = Tl.camAt(G.gT());
+    const dShip = Math.hypot(hl.position.x-p.x, hl.position.y-p.y, hl.position.z-p.z);
+    t('LIGHT-S4 光源が機体から離れている', dShip > 3, `距離=${dShip.toFixed(1)}`);
+  }
+
   Tl._setT(0); Tl.update(.016);
 
   // ---- 性能 ----
