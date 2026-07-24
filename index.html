@@ -348,7 +348,7 @@ body.no-cursor #cursor{
 
 
 /* SPEC-08b: フリーズ中のTIME HOLDバッジ */
-#time-hold{position:fixed;top:24px;left:50%;transform:translateX(-50%);z-index:5;
+#time-hold{position:fixed;top:76px;left:50%;transform:translateX(-50%);z-index:5;   /* ヘッダー/ナビと重ならない高さ */
   font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:.4em;color:var(--cyan);
   border:1px solid rgba(0,240,255,.4);padding:6px 16px;background:rgba(4,8,24,.6);
   text-shadow:0 0 10px rgba(0,240,255,.6);pointer-events:none}
@@ -368,8 +368,8 @@ body.no-cursor #cursor{
 /* SPEC-07b: 訓練章(スクロール3D展開ガイド) */
 .chapter{position:relative;height:240vh}   /* sticky滞在=高さ-100vh(章の読了尺) */
 #ch-sortie{height:170vh}   /* 凍結なし章は短め(SPEC-08c E3-06) */
-.ch-pin{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;justify-content:flex-end;
-  padding:0 8vw 12vh;pointer-events:none;max-width:820px}
+.ch-pin{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;justify-content:center;
+  padding:0 8vw;pointer-events:none;max-width:820px}
 .ch-head{opacity:0;transform:translateY(14px);transition:.4s;margin-bottom:18px}
 .ch-head.lit{opacity:1;transform:none}
 .ch-num{font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:.35em;color:var(--cyan)}
@@ -409,11 +409,11 @@ body.no-cursor #cursor{
   .gfs{margin-bottom:12px;font-size:10px}
   .gbtns{gap:12px}
   /* SPEC-07d: SPの章レイアウト(下2/3テキスト・読解用グラデーション) */
-  .ch-pin{padding:0 6vw 6vh;justify-content:flex-end}
+  .ch-pin{padding:0 6vw;justify-content:center}
   .ch-line{font-size:13.5px;line-height:2}
   .ch-title{font-size:26px}
-  .chapter .ch-pin::after{content:"";position:absolute;left:0;right:0;bottom:0;height:55vh;z-index:-1;
-    background:linear-gradient(transparent,rgba(3,0,20,.72))}
+  .chapter .ch-pin::after{content:"";position:absolute;inset:0;z-index:-1;
+    background:linear-gradient(90deg,rgba(3,0,20,.78),rgba(3,0,20,.34) 62%,transparent)}
   .deck{flex-direction:column}
 }
 @media (prefers-reduced-motion:reduce){
@@ -2380,6 +2380,9 @@ const Guide = (()=>{
     document.getElementById('time-hold').style.display = fz > .01 ? 'block' : 'none';
   }
   function camMod(){ return fxState.cam; }
+  // 機体位置をステージ相対で取得(章の道具を機体基準に置くため)
+  const _sl = new THREE.Vector3();
+  function shipLocal(g){ return _sl.copy(sortie.ship.position).sub(g.position); }
   // フリーズ中はカメラ・機体・岩帯のグローバル時間も静止させる(E2-04の静止保証)
   function gT(){
     const t = Tl.t;
@@ -2388,6 +2391,7 @@ const Guide = (()=>{
       if(!st || !st.fz) continue;
       if(t > d.t0 && t < d.t1){
         const span = d.t1 - d.t0, tl = (t - d.t0)/span;
+        if(red()) return d.t0 + span*st.fz.f0;   // 縮退時は章全体を凍結フレームで静止
         return d.t0 + span*warp(tl, st.fz.f0, st.fz.f1);
       }
     }
@@ -2436,17 +2440,22 @@ const Guide = (()=>{
   function buildFlight(){
     const g = new THREE.Group();
     const bigRock = new THREE.Mesh(Assets.rockGeos()[5], Assets.rockMats()[1]);
-    bigRock.scale.setScalar(4.5);
+    bigRock.scale.setScalar(3.4);
     g.add(bigRock);
+    // 岩は機体基準で配置し、ta=f0(凍結点)でちょうど機体と同じ奥行き=すれ違いの瞬間になる。
+    // 遠方では横ズレが小さく見える(=正面衝突コース)→接近するほど左へ流れ、機体は右へ退避する
+    const OFF_X = -5.8, OFF_Y = 2.4, SWEEP = 138;
     return {group:g, bigRock,
       fz:{f0:.42, f1:.78},
       update(ta){
-        bigRock.position.set(3.2 - 6.5*ta, .6 - 1.4*ta, -52 + 84*ta);
+        const from = shipLocal(g);   // バンク適用前の機体位置(ステージ相対)
+        bigRock.position.set(from.x + OFF_X, from.y + OFF_Y, from.z + (ta - .42)*SWEEP);
         bigRock.rotation.y = 1 + ta*2.4; bigRock.rotation.x = ta*1.6;
-        // 回避バンク: 機体(Sortie)に交差前後だけ横転を加える
+        // 回避機動: 交差の瞬間にピークが来る右への退避+バンク(岩とは常に離れる方向)
         const b = bell(ta, .3, .54);
-        sortie.ship.position.x += b*1.6;
-        sortie.ship.rotation.z -= b*.75;
+        sortie.ship.position.x += b*3.0;
+        sortie.ship.position.y -= b*.4;
+        sortie.ship.rotation.z -= b*.4;
       }};
   }
   // ---- 章03 WEAPONS: コア回収→発射→着弾閃光で凍結→解除で三層爆発(SPEC-08b) ----

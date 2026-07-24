@@ -37,6 +37,25 @@
   }
   const Sf = G.stage('flight'), Sw = G.stage('weapons'), Ss = G.stage('survival');
   t('E2-04 FLIGHT凍結静止', frozenCheck('flight', ()=>Sf.bigRock.position.toArray(), .5, .7));
+
+  // FB: 凍結点=すれ違いの瞬間であること(岩と機体がほぼ同じ奥行き)
+  const fCh = ch('flight');
+  go(fCh, .6);   // 凍結中
+  const rockW = Sf.bigRock.getWorldPosition(new (Sf.bigRock.position.constructor)());
+  const shipW = G.sortie.ship.position;
+  const dzCross = Math.abs(rockW.z - shipW.z);
+  t('FB-02 凍結点が交差の瞬間', dzCross < 3, `|Δz|=${dzCross.toFixed(2)}`);
+  // FB: すり抜けていない(中心間距離 > 岩半径+機体半幅)
+  const dx = rockW.x - shipW.x, dy = rockW.y - shipW.y;
+  const dist = Math.hypot(dx, dy, rockW.z - shipW.z);
+  const rockR = Sf.bigRock.scale.x*1.3, shipR = 3.94;   // 岩は変位で最大1.3倍
+  t('FB-02b すり抜けなし(離隔確保)', dist > rockR + shipR,
+    `dist=${dist.toFixed(2)} > ${(rockR+shipR).toFixed(2)} (dx=${dx.toFixed(1)} dy=${dy.toFixed(1)})`);
+  // FB: 岩は接近するほど機体から離れる方向(=避けている)
+  const sepAt = k=>{ go(fCh, k); const r = Sf.bigRock.getWorldPosition(new (Sf.bigRock.position.constructor)());
+    return Math.hypot(r.x - G.sortie.ship.position.x, r.y - G.sortie.ship.position.y); };
+  const sepMid = sepAt(.6);
+  t('FB-02c 交差時に横方向へ退避', sepMid > 7, `横離隔=${sepMid.toFixed(2)}`);
   t('E2-04b WEAPONS凍結静止(閃光)', frozenCheck('weapons', ()=>[Sw.flash.scale.x, Sw.flash.material.opacity, ...Sw.tracers[0].position.toArray()], .58, .74));
   t('E2-04c SURVIVAL凍結静止(火花)', frozenCheck('survival', ()=>[...Ss.sparks[0].position.toArray(), Ss.film.material.opacity], .55, .72));
 
