@@ -107,6 +107,32 @@
   const snap2 = Sw.shards[0].position.toArray().map(v=>+v.toFixed(5)).join(',');
   t('E2 決定性(凍結跨ぎ)', snap1 === snap2);
 
+  // ---- FB: フリーズ中のカメラ寄りが蓄積せず、機体が画面内に留まる ----
+  const camObj = V.pageFx.camera, stepCam = V.pageFx.stepCamera;
+  V.pageMouse.x = 0; V.pageMouse.y = 0; V.pageMouse.tx = 0; V.pageMouse.ty = 0;
+  const svCh = ch('survival');
+  go(svCh, .6);                       // 凍結中(camOffが最大)
+  for(let i = 0; i < 240; i++) stepCam();   // 定常状態まで回す
+  const camTgt = G.camMod();
+  const tgt = Tl.camAt(G.gT());
+  const driftX = Math.abs(camObj.position.x - (tgt.x + camTgt.x));
+  const driftY = Math.abs(camObj.position.y - (tgt.y + camTgt.y));
+  t('FB-04 カメラ寄りが蓄積しない', driftX < .5 && driftY < .5,
+    `drift=(${driftX.toFixed(2)}, ${driftY.toFixed(2)}) camOff=(${camTgt.x}, ${camTgt.y})`);
+
+  // 機体が視錐台内(PC/SP両アスペクト)に収まる
+  const shipPos = G.sortie.ship.position.clone();
+  const inFrame = aspect=>{
+    const a0 = camObj.aspect;
+    camObj.aspect = aspect; camObj.updateProjectionMatrix(); camObj.updateMatrixWorld();
+    const n = shipPos.clone().project(camObj);
+    camObj.aspect = a0; camObj.updateProjectionMatrix(); camObj.updateMatrixWorld();
+    return {x:+n.x.toFixed(2), y:+n.y.toFixed(2), ok: Math.abs(n.x) < .9 && Math.abs(n.y) < .9 && n.z < 1};
+  };
+  const framePC = inFrame(16/9), frameSP = inFrame(375/812);
+  t('FB-04b 機体が画面内(PC)', framePC.ok, `ndc=(${framePC.x}, ${framePC.y})`);
+  t('FB-04c 機体が画面内(SP縦)', frameSP.ok, `ndc=(${frameSP.x}, ${frameSP.y})`);
+
   Tl._setT(0); Tl.update(.016);
 
   // ---- 性能 ----

@@ -772,6 +772,20 @@ addEventListener('scroll', Tl.sample, {passive:true});
 /* ---------- メインループ ---------- */
 const clock = new THREE.Clock();
 let pagePrevT = 0, pageMs = 8, pageOver = 0;
+// ページカメラ更新(SPEC-08b): フリーズ中の寄り(camOff)は「補間の目標」に加算する。
+// 位置へ直接毎フレーム加算すると lerp係数の逆数倍(≒20倍)まで蓄積し、背景が大きくズレるため。
+function stepPageCamera(){
+  const cam = Tl.camAt(Guide.gT());   // フリーズ中はカメラも静止(SPEC-08b)
+  const gm = Guide.camMod();          // フリーズ中はイベントへ寄る(E2-07)
+  camera.position.z += (cam.z - camera.position.z)*.06;
+  camera.position.x += (cam.x + gm.x + mouse.x*7 - camera.position.x)*.05;
+  camera.position.y += (cam.y + gm.y - mouse.y*5 - camera.position.y)*.05;
+  if(Math.abs(camera.fov - cam.fov) > .01){
+    camera.fov += (cam.fov - camera.fov)*.1;
+    camera.updateProjectionMatrix();
+  }
+  camera.lookAt(0, 0, camera.position.z - 100);
+}
 function loop(){
   requestAnimationFrame(loop);
   const t = clock.getElapsedTime();
@@ -779,19 +793,9 @@ function loop(){
 
   // タイムライン更新(SPEC-07a) + パララックス + キーフレームカメラ航行
   Tl.update(dtP);
-  const cam = Tl.camAt(Guide.gT());   // フリーズ中はカメラも静止(SPEC-08b)
   mouse.x += (mouse.tx - mouse.x)*.05;
   mouse.y += (mouse.ty - mouse.y)*.05;
-  camera.position.z += (cam.z - camera.position.z)*.06;
-  camera.position.x += (cam.x + mouse.x*7 - camera.position.x)*.05;
-  camera.position.y += (cam.y - mouse.y*5 - camera.position.y)*.05;
-  if(Math.abs(camera.fov - cam.fov) > .01){
-    camera.fov += (cam.fov - camera.fov)*.1;
-    camera.updateProjectionMatrix();
-  }
-  camera.lookAt(0, 0, camera.position.z - 100);
-  const gm = Guide.camMod();   // フリーズ中はイベントへ寄る(SPEC-08b E2-07)
-  camera.position.x += gm.x; camera.position.y += gm.y;
+  stepPageCamera();
 
   // ページブルームの予算監視(3秒超過で恒久OFF)
   pageMs += (dtP*1000 - pageMs)*.05;
@@ -2806,7 +2810,8 @@ loop();
 // テストハーネス用の公開フック(specs/00 §5)。ゲーム挙動には関与しない
 window.VG = {SoundEngine, AsteroidRun, Quality, openLayer, closeLayer,
   Tl, Assets, Guide, pageMouse: mouse, isTouch: IS_TOUCH,
-  pageFx: {composer: pageComposer, get bloom(){ return pageBloom; }}};
+  pageFx: {composer: pageComposer, get bloom(){ return pageBloom; },
+    camera, stepCamera: stepPageCamera}};
 </script>
 </body>
 </html>
