@@ -57,6 +57,37 @@
   const alertOff = !V.AsteroidRun.debug().cockpitParts.alertOn;
   t('CPT-04 CRITICAL非常灯', alertOn && alertOff, `on=${alertOn} off=${alertOff}`);
 
+  // ---- ヘッドライト(FB): 近距離の障害物だけが明るくなる ----
+  const hl = D2.headlight;
+  t('LIGHT-01 ヘッドライト', !!hl && hl.isSpotLight === true && hl.distance > 0,
+    hl ? `dist=${hl.distance} int=${hl.intensity}` : 'なし');
+  if(hl){
+    // 光源はコックピット計器(≒ship.z-0.15)より前方=至近距離の白飛び防止
+    t('LIGHT-01b 光源が計器より前方', hl.position.z < -3, 'hl.z='+hl.position.z.toFixed(1));
+
+    const rp = D2.composer.passes[0], scn = rp.scene, cam = rp.camera, RD2 = D2.composer.renderer;
+    const rocks = scn.children.filter(o=>o.isMesh && o.material && o.material.bumpMap);
+    const gl = RD2.getContext();
+    const sample = ()=>{ RD2.render(scn, cam);
+      const w = RD2.domElement.width, h = RD2.domElement.height, bw = 160, bh = 120;
+      const buf = new Uint8Array(bw*bh*4);
+      gl.readPixels((w-bw)>>1, (h-bh)>>1, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      let sum = 0; for(let i = 0; i < buf.length; i += 4) sum += buf[i]+buf[i+1]+buf[i+2];
+      return sum/(bw*bh*3); };
+    const keep = rocks.map(m=>m.position.clone());
+    const gainAt = z=>{
+      rocks.forEach((m, i)=>m.position.set(0, 0, -1500 - i*10));
+      rocks[0].position.set(0, 0, z); rocks[0].scale.setScalar(z < -150 ? 24 : 5);
+      const on = sample(); const k = hl.intensity; hl.intensity = 0;
+      const off = sample(); hl.intensity = k;
+      return on - off; };
+    const gNear = gainAt(-30), gFar = gainAt(-300);
+    rocks.forEach((m, i)=>{ m.position.copy(keep[i]); m.scale.setScalar(m.userData.r); });
+    t('LIGHT-02 近距離が明るくなる', gNear > 8, `gain(近)=${gNear.toFixed(1)}`);
+    t('LIGHT-03 遠距離は変化なし', Math.abs(gFar) < 2 && gNear > gFar*3 + 5,
+      `gain(遠)=${gFar.toFixed(1)}`);
+  }
+
   // ---- 予算(CPT-06 / SPEC-00 §2) ----
   const RD = D2.composer.renderer;
   RD.info.autoReset = false; RD.info.reset();

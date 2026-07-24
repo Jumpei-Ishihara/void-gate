@@ -1318,6 +1318,7 @@ const AsteroidRun = (()=>{
   const rockGeos = [], rockMats = [];   // SPEC-03: 岩ジオメトリ/マテリアルの共有プール
   let shipFx = null, cptFx = null;      // SPEC-05: 機体/コックピット装飾の参照
   let bgFx = null, motes = null;        // SPEC-06: 遠景/塵レイヤー
+  let headlight = null, hlTarget = null;   // 機体前方を照らすヘッドライト(接近する障害物だけが明るくなる)
   const MOTES_N = IS_TOUCH ? 300 : 600;
   let shardsBudget = 0;                 // SPEC-06 PRF: 品質段階で可変(0=buildで初期化)
   let glitchUntil = 0;                  // SPEC-04 FX-06: 被弾時の計器グリッチ終了時刻
@@ -1355,6 +1356,13 @@ const AsteroidRun = (()=>{
     const key = new THREE.DirectionalLight(0xaaccff, 2.4);
     key.position.set(40, 60, 30);
     S.add(key);
+
+    // ヘッドライト: 前方の近距離だけを照らし、接近中の障害物が明るく浮かび上がる。
+    // shipの子にすると視点切替でship.visible=falseの際にライトごと除外されるためシーン直下に置く
+    headlight = new THREE.SpotLight(0xcce9ff, 420, 165, .58, .8, 1.5);
+    hlTarget = new THREE.Object3D();
+    S.add(headlight, hlTarget);
+    headlight.target = hlTarget;
 
     // SPEC-07a: 岩プール/マテリアルは共有ファクトリAssetsから取得(SPEC-03仕様は不変)
     Assets.rockGeos().forEach(g=>rockGeos.push(g));
@@ -2096,6 +2104,12 @@ const AsteroidRun = (()=>{
     ship.position.y += (ty - ship.position.y)*Math.min(1, dt*8);   // 上下は左右より機敏に
     ship.rotation.z = (tx - ship.position.x)*-.06;
     ship.rotation.x = (ty - ship.position.y)*.055;
+    if(headlight){
+      // 機体の前方から照射。光源はコックピット計器(≒ship.z-0.15)より前に置き、
+      // 至近距離の計器/機体が白飛びしないようにする
+      headlight.position.set(ship.position.x, ship.position.y + .4, ship.position.z - 7);
+      hlTarget.position.set(ship.position.x*.8, ship.position.y*.8, ship.position.z - 95);
+    }
 
     // 慣性付き入力(視線・ロール・操縦桿を滑らかに)
     const spdR = Math.min(1, (st.speed-110)/(SPD_MAX-110));
@@ -2261,6 +2275,7 @@ const AsteroidRun = (()=>{
     return {playing, composer, bloom, bloomRes: BLOOM_RES, isTouch: IS_TOUCH,
       shields: st ? st.shields : -99,
       glitchActive: performance.now() < glitchUntil,
+      headlight,
       rocksFromAssets: rockGeos.length === 8 && rockGeos[0] === Assets.rockGeos()[0],
       rocks,
       fx: P ? {stats: fxStats, step: updateFx, shardsPerBoom: SHARDS_PER_BOOM,
