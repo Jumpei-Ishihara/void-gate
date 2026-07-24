@@ -1,0 +1,18 @@
+{
+  "name": "VOID GATE — 深宇宙への入口",
+  "short_name": "VOID GATE",
+  "description": "スクロールで3D宇宙が展開する体験型サイト。小惑星帯を突破する3D飛行ゲーム ASTEROID RUN をブラウザで無料プレイできます。",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#030014",
+  "theme_color": "#030014",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

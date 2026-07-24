@@ -182,6 +182,22 @@ ESCまたはEXITボタンでサイトに復帰する。スコアは`localStorage
 - HUDは章表記（GATE 00/05〜LAUNCH DECK 05/05）と連動。`prefers-reduced-motion`時は各章が凍結フレーム固定+全行即時点灯に縮退
 - 詳細設計: specs/07〜07d（旧構成）、specs/08〜08c（現構成）
 
+## 6-2. SEO / SNS メタ情報
+
+| 項目 | 内容 |
+|---|---|
+| title | `VOID GATE — スクロールで宇宙が展開する3D体験サイト｜ASTEROID RUN`（45字） |
+| description | 体験の要点＋「ブラウザで無料プレイ」「Three.js製・PC/スマホ対応」を含む103字 |
+| canonical / robots | 正規URL指定 + `index, follow, max-image-preview:large` |
+| OGP / X Card | `summary_large_image`。画像は1200×630のカード（コア＋タイトル）を同梱生成 |
+| アイコン | SVG favicon（優先）+ PNG 32px + Apple touch icon 180px + PWA用 192/512px |
+| PWA | `site.webmanifest`（standalone・theme_color `#030014`）でホーム画面追加に対応 |
+| 構造化データ | JSON-LD `@graph` に WebSite と VideoGame（無料・ジャンル・プラットフォーム）を記述 |
+| クローラ制御 | `robots.txt`（`/tests/` を除外）+ `sitemap.xml` |
+
+- 画像・アイコンはすべてリポジトリ内で生成し同梱（外部依存ゼロの方針を維持）
+- 検証は `tests/phaseSEO.js`（22項目）で自動化し、run-allに組み込み済み
+
 ## 7. スマートフォン(SP)対応
 
 ### サイト本体（≤720px）

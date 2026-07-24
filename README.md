@@ -58,6 +58,14 @@ python3 -m http.server 8000
 # → http://localhost:8000/ を開く
 ```
 
+## SEO / SNS
+
+- `title` / `description` / `canonical` / `robots` / JSON-LD構造化データ（WebSite + VideoGame）を実装
+- OGP・X(Twitter) Card は `summary_large_image`。カード画像 `assets/og.png`(1200×630) はサイトの世界観に合わせて生成
+- favicon（SVG + PNG）・Apple touch icon・`site.webmanifest`（ホーム画面追加/PWA相当）を用意
+- `robots.txt`（tests/ を除外）と `sitemap.xml` を配置
+- 検証: `tests/phaseSEO.js`（メタ22項目 + 実ファイル到達性 + OGP画像実寸）
+
 ## ドキュメント
 
 | ファイル | 内容 |
@@ -69,7 +77,7 @@ python3 -m http.server 8000
 
 ## テスト
 
-`tests/phase1〜4.js`(ゲーム) + `tests/phaseA〜D.js`(ガイドサイト) に受け入れテスト計129項目。`tests/run-all.js` で一括実行できます:
+`tests/phase1〜4.js`(ゲーム) + `tests/phaseA〜D・E1〜E3.js`(サイト) + `tests/phaseSEO.js` に受け入れテスト計179項目。`tests/run-all.js` で一括実行できます:
 
 ```js
 fetch('tests/run-all.js').then(r=>r.text()).then(eval);   // 結果は window.__ALLRESULTS

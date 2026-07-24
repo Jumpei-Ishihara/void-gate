@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /tests/
+
+Sitemap: https://jumpei-ishihara.github.io/void-gate/sitemap.xml
