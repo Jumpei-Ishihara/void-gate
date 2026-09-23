@@ -1,6 +1,6 @@
 # SPEC 09a — Phase F1: 当たり判定の正確化（RadialHull + 機体4球）
 
-状態: **Draft** ／ 親: [SPEC-09](09-realism-gameplay-policy.md) ／ 前提: なし（最初のフェーズ） ／ 外部素材: 不要
+状態: **Verified (2026-09-23 phaseF1 14/14・run-all 13スイート197テスト ALL GREEN。表面誤差の実測最大 .060)** ／ 親: [SPEC-09](09-realism-gameplay-policy.md) ／ 前提: なし（最初のフェーズ） ／ 外部素材: 不要
 
 ## 1. 目的
 
@@ -34,26 +34,17 @@
 岩は「正二十面体の各頂点を中心から放射方向に伸縮した形」なので、表面は**方向の関数 r(dir)** で表せる。
 
 ```js
-// Assets 内。geo は deformRock 済みの単位スケール形状
-function buildRadialHull(geo){
-  const DIRS = unitIcoDirs(3);                 // 正二十面体 detail3 の頂点方向 = 642 方向（共有）
-  const pos = geo.attributes.position, v = new THREE.Vector3();
-  const R = new Float32Array(DIRS.length);
-  // 各サンプル方向に最も近い頂点の半径…ではなく、レイ×三角形の交差距離を厳密に前計算する
-  for(let i = 0; i < DIRS.length; i++) R[i] = rayHitFromCenter(geo, DIRS[i]);
-  let max = 0; R.forEach(x=>max = Math.max(max, x));
-  return {
-    max,                                         // 外接球半径（粗判定用）
-    radiusAt(d){                                 // d: 岩ローカルの単位ベクトル
-      // 上位3方向の dot^8 重み付き補間（1フレーム数十回程度なので線形探索で十分）
-      ...
-    }
-  };
+// Assets 内（実装）。geo は deformRock 済みの単位スケール形状
+function rockHull(geo){
+  // 立方体マップの格子点 6面 × 17 × 17 = 1734 方向について、中心からのレイと全三角形の交差距離を
+  // Möller–Trumbore で厳密に前計算する（岩は星形なので交差は1つ。念のため最大値を採る）
+  // radiusAt(dir): dir の主軸で面を選び、面内座標で4格子点を双線形補間 → O(1)
+  return {max /* 頂点の最大半径 = 外接球 */, tab, radiusAt(dir){ ... }};
 }
 ```
 
-- 前計算は起動時に1回（8ジオメトリ × 642方向 × 三角形数）。IS_TOUCH（detail2）では約 0.1 秒以内を目標に、
-  間引き方向 detail2（162方向）を使う
+- 実測: 全8ジオメトリ × 無作為 500 方向で表面との誤差の最大 **0.060**（基準 .075 以内。r=8 で ±0.48）
+- 前計算は `build()`（ゲーム起動時）に1回。サイト初期表示には影響しない
 - テーブルは `geo.userData.hull` に保持。`Assets.rockGeos()` の戻り値と同じ参照から取れる
 
 ### 3.2 機体4球（F1-03）
@@ -62,7 +53,7 @@ function buildRadialHull(geo){
 
 | 球 | ローカル中心 | 半径 | 覆う範囲 |
 |---|---|---|---|
-| nose | (0, 0, -1.7) | .80 | 機首先端〜前半 |
+| nose | (0, 0, -1.8) | .85 | 機首先端〜前半（先端 z=-2.6 まで .80 で包含） |
 | body | (0, -.1, .9) | 1.35 | 胴・ノズル |
 | wingL | (-2.6, -.4, 1.2) | 1.15 | 翼端 -3.75 まで |
 | wingR | ( 2.6, -.4, 1.2) | 1.15 | 翼端 +3.75 まで |

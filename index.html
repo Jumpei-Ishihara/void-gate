@@ -1312,6 +1312,98 @@ const Assets = (()=>{
     }
     return _rockGeos;
   }
+  // SPEC-09a F1-01/02: 方向別半径テーブル(RadialHull)。岩は中心から放射状に変形した星形なので
+  // 表面は方向の関数 r(dir)。立方体マップの格子点(6面×17×17)で中心からのレイ交差距離を厳密に前計算し、双線形補間で引く
+  const HULL_N = 17;
+  function rayFromCenter(pos, d){   // 原点からの半直線と全三角形の交差距離の最大値(Möller–Trumbore)
+    const a = pos; let best = 0;
+    for(let i = 0; i < a.length; i += 9){
+      const ax = a[i], ay = a[i+1], az = a[i+2];
+      const e1x = a[i+3]-ax, e1y = a[i+4]-ay, e1z = a[i+5]-az, e2x = a[i+6]-ax, e2y = a[i+7]-ay, e2z = a[i+8]-az;
+      const px = d.y*e2z - d.z*e2y, py = d.z*e2x - d.x*e2z, pz = d.x*e2y - d.y*e2x;
+      const det = e1x*px + e1y*py + e1z*pz;
+      if(Math.abs(det) < 1e-9) continue;
+      const inv = 1/det, tx = -ax, ty = -ay, tz = -az;
+      const u = (tx*px + ty*py + tz*pz)*inv;
+      if(u < -1e-6 || u > 1 + 1e-6) continue;
+      const qx = ty*e1z - tz*e1y, qy = tz*e1x - tx*e1z, qz = tx*e1y - ty*e1x;
+      const v = (d.x*qx + d.y*qy + d.z*qz)*inv;
+      if(v < -1e-6 || u + v > 1 + 1e-6) continue;
+      const tt = (e2x*qx + e2y*qy + e2z*qz)*inv;
+      if(tt > best) best = tt;
+    }
+    return best;
+  }
+  // 方向 → (面, u, v)。u,v∈[-1,1]
+  function cubeFace(x, y, z){
+    const ax = Math.abs(x), ay = Math.abs(y), az = Math.abs(z);
+    if(ax >= ay && ax >= az) return [x > 0 ? 0 : 1, y/ax, z/ax];
+    if(ay >= az)             return [y > 0 ? 2 : 3, x/ay, z/ay];
+    return                          [z > 0 ? 4 : 5, x/az, y/az];
+  }
+  function faceDir(f, u, v, out){
+    if(f < 2) out.set(f === 0 ? 1 : -1, u, v);
+    else if(f < 4) out.set(u, f === 2 ? 1 : -1, v);
+    else out.set(u, v, f === 4 ? 1 : -1);
+    return out.normalize();
+  }
+  function rockHull(geo){
+    if(geo.userData.hull) return geo.userData.hull;
+    const src = geo.index ? geo.toNonIndexed() : geo;
+    const pos = src.attributes.position.array, N = HULL_N, tab = new Float32Array(6*N*N), d = new THREE.Vector3();
+    for(let f = 0; f < 6; f++) for(let j = 0; j < N; j++) for(let i = 0; i < N; i++){
+      faceDir(f, -1 + 2*i/(N-1), -1 + 2*j/(N-1), d);
+      tab[(f*N + j)*N + i] = rayFromCenter(pos, d);
+    }
+    let max = 0;
+    const p = geo.attributes.position, v = new THREE.Vector3();
+    for(let i = 0; i < p.count; i++) max = Math.max(max, v.fromBufferAttribute(p, i).length());
+    const hull = {max, tab,
+      radiusAt(dir){   // dir: 岩ローカルの方向(正規化不要)
+        const [f, u, w] = cubeFace(dir.x, dir.y, dir.z);
+        const fu = (u + 1)*.5*(N-1), fw = (w + 1)*.5*(N-1);
+        const i0 = Math.min(N-2, Math.floor(fu)), j0 = Math.min(N-2, Math.floor(fw)), a = fu - i0, b = fw - j0;
+        const o = f*N*N;
+        return (tab[o + j0*N + i0]*(1-a) + tab[o + j0*N + i0+1]*a)*(1-b)
+             + (tab[o + (j0+1)*N + i0]*(1-a) + tab[o + (j0+1)*N + i0+1]*a)*b;
+      }};
+    geo.userData.hull = hull;
+    return hull;
+  }
+  // SPEC-09a F1-03: 機体を4球で近似(buildShipの形状: 機首Cone(1.3,5.2)を-z向き / 主翼Box(7.5,.3,2.4) at (0,-.4,1.2))
+  const SHIP_SPHERES = [
+    {name:'nose',  c:[0, 0, -1.8],    r:.85},
+    {name:'body',  c:[0, -.1, .9],    r:1.35},
+    {name:'wingL', c:[-2.6, -.4, 1.2], r:1.15},
+    {name:'wingR', c:[ 2.6, -.4, 1.2], r:1.15}];
+  const HIT_LENIENCY = .9;   // F1-04: 機体球の半径に乗算(見た目より少し甘く)
+  function shipSpheresWorld(ship, out){
+    ship.updateMatrixWorld();
+    out = out || SHIP_SPHERES.map(S=>({name:S.name, c:new THREE.Vector3(), r:S.r}));
+    SHIP_SPHERES.forEach((S, i)=>out[i].c.set(S.c[0], S.c[1], S.c[2]).applyMatrix4(ship.matrixWorld));
+    return out;
+  }
+  // SPEC-09a F1-04/05/07: 岩表面と機体球のすき間(負=接触の深さ)。
+  // sd: このフレームの岩の移動量(+z)。移動線分上の最接近点で測る(トンネリング防止)
+  const _q = new THREE.Vector3(), _d = new THREE.Vector3(), _iq = new THREE.Quaternion();
+  function clearance(rock, sph, sd = 0){
+    const hull = rock.geometry.userData.hull || rockHull(rock.geometry), s = rock.userData.r, p = rock.position;
+    let best = Infinity, inv = false;
+    for(const S of sph){
+      let k = 1;
+      if(sd > 0) k = Math.min(1, Math.max(0, (S.c.z - (p.z - sd))/sd));
+      _q.set(p.x, p.y, p.z - sd + sd*k);
+      _d.subVectors(S.c, _q);
+      const dist = _d.length(), rs = S.r*HIT_LENIENCY;
+      const coarse = dist - hull.max*s - rs;
+      if(coarse > 0){ if(coarse < best) best = coarse; continue; }
+      if(!inv){ _iq.copy(rock.quaternion).invert(); inv = true; }
+      _d.applyQuaternion(_iq);
+      const c = dist - hull.radiusAt(_d)*s - rs;
+      if(c < best) best = c;
+    }
+    return best;
+  }
   function rockMats(){
     if(!_rockMats){
       const tx = makeRockTex(IS_TOUCH ? 256 : 512);
@@ -1373,7 +1465,8 @@ const Assets = (()=>{
     group.add(nozzles, nozzleGlow, ex1, ex2, tipL, tipR);
     return {group, parts:{nozzles, nozzleGlow, exhaust:[ex1, ex2], tips:[tipL, tipR]}};
   }
-  return {deformRock, makeRockTex, mergeGeo, rockGeos, rockMats, buildCore, buildShip};
+  return {deformRock, makeRockTex, mergeGeo, rockGeos, rockMats, buildCore, buildShip,
+          rockHull, SHIP_SPHERES, HIT_LENIENCY, shipSpheresWorld, clearance};
 })();
 
 /* ---------- GAME 1: ASTEROID RUN(探査開始) ---------- */
@@ -1397,6 +1490,7 @@ const AsteroidRun = (()=>{
   let raf = 0, playing = false, last = 0, frame = 0, st = null;
   const mt = {x:0, y:0};
   const sm = {x:0, y:0, roll:0, pitch:0, fov:72};   // 慣性付きカメラ状態
+  const CORE_R2 = 34;       // コア回収半径²(SPEC-09a F1-08: 不変)
   const FX = 46, FY = 34;   // 飛行フィールドの半径(上下も機敏に動ける広さ)
   const SPD_MAX = 480;      // 速度上限(表示は×4 = 1920 km/s)
   const LN = 280;           // スピードラインの本数
@@ -1435,7 +1529,7 @@ const AsteroidRun = (()=>{
     headlight.target = hlTarget;
 
     // SPEC-07a: 岩プール/マテリアルは共有ファクトリAssetsから取得(SPEC-03仕様は不変)
-    Assets.rockGeos().forEach(g=>rockGeos.push(g));
+    Assets.rockGeos().forEach(g=>{ rockGeos.push(g); Assets.rockHull(g); });   // SPEC-09a: 判定テーブルを起動時に前計算
     Assets.rockMats().forEach(m=>rockMats.push(m));
     for(let i=0;i<46;i++){
       const m = new THREE.Mesh(rockGeos[i%8], rockMats[i%3]);
@@ -2247,21 +2341,17 @@ const AsteroidRun = (()=>{
       m.rotation.x += m.userData.sx*dt;
       m.rotation.y += m.userData.sy*dt;
       m.rotation.z += m.userData.sz*dt;
-      if(m.position.z > 26){ respawn(m, true); continue; }
-      if(!inv){
-        const dx = m.position.x-ship.position.x, dy = m.position.y-ship.position.y;
-        const dz = nearestDz(m.position.z-ship.position.z);
-        const rr = m.userData.r + 2.2;
-        if(dx*dx+dy*dy+dz*dz < rr*rr){ hit(now, m); if(!playing) return; }
-      }
     }
+    // 判定は再配置より先(1フレームで z>26 まで抜けた岩も通過線分で判定する)
+    if(!inv && !collide(now, sd)) return;
+    for(const m of asts) if(m.position.z > 26) respawn(m, true);
     for(const m of cores){
       m.position.z += sd;
       m.rotation.y += dt*3;
       if(m.position.z > 26){ respawn(m, true); continue; }
       const dx = m.position.x-ship.position.x, dy = m.position.y-ship.position.y;
       const dz = nearestDz(m.position.z-ship.position.z);
-      if(dx*dx+dy*dy+dz*dz < 34) pickupCore(m);
+      if(dx*dx+dy*dy+dz*dz < CORE_R2) pickupCore(m);
     }
     // 戦闘エフェクト更新(プール式, SPEC-04) + 装飾更新(SPEC-05)
     updateFx(dt);
@@ -2291,6 +2381,16 @@ const AsteroidRun = (()=>{
     if(view === 'cockpit' && frame%4 === 0) drawDash();
     afterimage.uniforms['damp'].value = .68 + spdR*.2;   // 速度で残像(ブラー)強化
     composer.render();
+  }
+  // SPEC-09a: 岩×機体4球の判定(移動線分の最接近点で測るのでトンネリングしない)。false=ゲーム終了
+  const shipSph = Assets.SHIP_SPHERES.map(S=>({name:S.name, c:new THREE.Vector3(), r:S.r}));
+  function collide(now, sd){
+    Assets.shipSpheresWorld(ship, shipSph);
+    for(const m of asts){
+      if(m.position.z < -60 || m.position.z - sd > 30) continue;   // 奥行きが離れた岩は判定不要(粗判定の手前で除外)
+      if(Assets.clearance(m, shipSph, sd) < 0){ hit(now, m); if(!playing) return false; }
+    }
+    return true;
   }
   function input(x, y){
     mt.x = (x/innerWidth - .5)*2;
@@ -2364,7 +2464,16 @@ const AsteroidRun = (()=>{
       bg: bgFx ? {planet: !!bgFx.planet, ring: !!bgFx.ring, fogOff: bgFx.planet.material.fog === false,
         motes: MOTES_N} : null,
       quality: {shardsBudget, bloomEnabled: bloom ? bloom.enabled !== false : null},
-      testPickup: ()=>pickupCore(cores[0])};
+      testPickup: ()=>pickupCore(cores[0]),
+      // SPEC-09a
+      clearance: Assets.clearance, asts, shipObj: ship, coreR2: CORE_R2,
+      tick: (ms = 16)=>loop(last + ms),   // テスト用: rAFに依存せず1フレーム進める(非表示タブ対策)
+      collide: (now, measureOnly)=>{
+        if(!measureOnly) return collide(now, 0);
+        Assets.shipSpheresWorld(ship, shipSph);   // 性能計測用: 奥行きの除外なしで全岩を精査(最悪ケース)
+        let n = 0; for(const m of asts) if(Assets.clearance(m, shipSph, 0) < 0) n++;
+        return n;
+      }};
   }
   return {menu, stop, input, resize, toggleView, toggleLock, toggleSound, fire, debug, applyQuality};
 })();
@@ -2906,7 +3015,7 @@ Guide.setup();   // SPEC-07b: 訓練章の構築(全ステージ初期構築, PE
 loop();
 
 // テストハーネス用の公開フック(specs/00 §5)。ゲーム挙動には関与しない
-window.VG = {SoundEngine, AsteroidRun, Quality, openLayer, closeLayer,
+window.VG = {THREE, SoundEngine, AsteroidRun, Quality, openLayer, closeLayer,
   Tl, Assets, Guide, pageMouse: mouse, isTouch: IS_TOUCH,
   pageFx: {composer: pageComposer, get bloom(){ return pageBloom; },
     camera, stepCamera: stepPageCamera}};

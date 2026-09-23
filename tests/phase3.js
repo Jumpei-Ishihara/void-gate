@@ -21,7 +21,7 @@
   t('SHP-03 翼端灯2色', sp && sp.tips === 2 && sp.tipColorsDistinct, 'tips='+(sp&&sp.tips));
   // SHP-02 排気の速度連動
   D.stRef.speed = 110; D.stepVisual(.1);
-  const e1 = D.shipParts.exhaustScale;
+  const e1 = V.AsteroidRun.debug().shipParts.exhaustScale;   // 取得時点のスナップショットなので step 後に取り直す
   D.stRef.speed = 480; D.stepVisual(.1);
   const e2 = V.AsteroidRun.debug().shipParts.exhaustScale;
   t('SHP-02 排気速度連動', e1 > 0 && e2 > e1*1.5, `scale110=${e1&&e1.toFixed(2)} scale480=${e2&&e2.toFixed(2)}`);
@@ -62,6 +62,7 @@
   t('LIGHT-01 ヘッドライト', !!hl && hl.isSpotLight === true && hl.distance > 0,
     hl ? `dist=${hl.distance} int=${hl.intensity}` : 'なし');
   if(hl){
+    if(D2.tick) D2.tick(16);   // rAFが止まる非表示タブでも1フレーム進めて光源を配置(SPEC-09 F1で追加)
     // 光源はコックピット計器(≒ship.z-0.15)より前方=至近距離の白飛び防止
     t('LIGHT-01b 光源が計器より前方', hl.position.z < -3, 'hl.z='+hl.position.z.toFixed(1));
 
