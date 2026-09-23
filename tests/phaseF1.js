@@ -40,12 +40,23 @@
   }
   t('F1-T02 表面誤差 ≤.075(r8で±0.6)', hulls.every(Boolean) && worst <= .075, `max=${worst.toFixed(4)} ${worstAt}`);
 
-  // F1-T03: 機体4球が翼端と機首先端を包含(寛容係数適用前)
+  // F1-T03: 当たり形状(球/カプセル)が機体の端点を包含(寛容係数適用前)
+  // SPEC-10改訂: 機体の形状変更に伴い、固定座標ではなく実際の外形の端点(x最大/最小・z最小・y最大)で検証する
   const SS = A.SHIP_SPHERES || [];
-  const covered = p=>SS.some(S=>Math.hypot(p[0]-S.c[0], p[1]-S.c[1], p[2]-S.c[2]) <= S.r + 1e-6);
-  const keyPts = [[-3.75, -.4, 1.2], [3.75, -.4, 1.2], [0, 0, -2.6]];
-  t('F1-T03 4球が翼端/機首を包含', SS.length === 4 && keyPts.every(covered),
-    SS.map(S=>`${S.name}(${S.c.join(',')};${S.r})`).join(' '));
+  const segD = (p, S)=>{ if(!S.c2) return Math.hypot(p[0]-S.c[0], p[1]-S.c[1], p[2]-S.c[2]);
+    const ab = S.c2.map((v, i)=>v - S.c[i]), ap = p.map((v, i)=>v - S.c[i]);
+    const k = Math.min(1, Math.max(0, (ab[0]*ap[0] + ab[1]*ap[1] + ab[2]*ap[2])/(ab[0]**2 + ab[1]**2 + ab[2]**2)));
+    return Math.hypot(...ap.map((v, i)=>v - ab[i]*k)); };
+  const covered = p=>SS.some(S=>segD(p, S) <= S.r + 1e-6);
+  const shipG = A.buildShip().group; shipG.updateMatrixWorld(true);
+  const ends = {xmax:null, xmin:null, zmin:null, ymax:null}, vv = new T.Vector3();
+  shipG.traverse(o=>{ if(!o.isMesh || o.material.transparent || o.material.isShaderMaterial) return;
+    const p = o.geometry.attributes.position;
+    for(let i = 0; i < p.count; i++){ vv.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld);
+      if(!ends.xmax || vv.x > ends.xmax[0]) ends.xmax = vv.toArray(); if(!ends.xmin || vv.x < ends.xmin[0]) ends.xmin = vv.toArray();
+      if(!ends.zmin || vv.z < ends.zmin[2]) ends.zmin = vv.toArray(); if(!ends.ymax || vv.y > ends.ymax[1]) ends.ymax = vv.toArray(); } });
+  t('F1-T03 当たり形状が機体の端点を包含', SS.length >= 4 && Object.values(ends).every(covered),
+    Object.entries(ends).map(([k, p])=>`${k}(${p.map(x=>x.toFixed(2)).join(',')}):${covered(p) ? 'ok' : 'NG'}`).join(' '));
 
   // ---- 判定のシナリオ(機体を原点・無回転で固定) ----
   const ship = new T.Object3D(); ship.updateMatrixWorld();
@@ -61,7 +72,7 @@
   };
   const oldHit = m=>m.position.length() < m.userData.r + 2.2;
 
-  if(CL && sph.length === 4){
+  if(CL && sph.length >= 4){
     // F1-T04: 翼の貫通の解消(旧: 非接触 → 新: 接触)
     const ex = extremeDir(0, true), s4 = 4;
     const r4 = mkRock(0, s4);

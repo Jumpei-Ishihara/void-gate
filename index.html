@@ -706,7 +706,7 @@ const Look = (()=>{
       fragmentShader: `uniform vec3 kd; varying vec3 vd;
         void main(){ vec3 d = normalize(vd); float k = max(dot(d, kd), 0.);
           vec3 c = vec3(.006, .008, .018);
-          c += vec3(1., .93, .82)*pow(k, 900.)*60.;
+          c += vec3(1., .93, .82)*pow(k, 900.)*15.;   // 恒星の輝点(鏡面の主な輝きは主光が担うため控えめに。SPEC-10)
           c += vec3(1., .85, .7)*pow(k, 24.)*.35;
           c += vec3(.25, .12, .45)*smoothstep(.2, 1., d.y*.5 + .5)*.05;
           c += vec3(0., .25, .35)*smoothstep(.4, 1., -d.x)*.03;
@@ -1531,21 +1531,27 @@ vec4 tpS(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy*tpScale)*w.x + t
   }
   // ===== SPEC-09f: 機体外板(パネルの継ぎ目+リベット)。高さ → 法線/粗さ =====
   function hullHeightCanvas(size, seed){
-    const c = document.createElement('canvas'); c.width = c.height = size;
-    const g = c.getContext('2d'), r = srng(seed);
+    // 高さ(継ぎ目・リベット)とアルベド(パネルごとのわずかな色むら)を同じ分割から作る
+    const c = document.createElement('canvas'), a = document.createElement('canvas');
+    c.width = c.height = a.width = a.height = size;
+    const g = c.getContext('2d'), ga = a.getContext('2d'), r = srng(seed);
     g.fillStyle = '#9a9a9a'; g.fillRect(0, 0, size, size);
-    g.strokeStyle = '#3a3a3a'; g.lineWidth = Math.max(2, size/170);
-    const rivet = Math.max(1.4, size/230);
+    ga.fillStyle = '#e8e8e8'; ga.fillRect(0, 0, size, size);
+    const seam = Math.max(1.2, size/300), rivet = Math.max(.9, size/420);
     const split = (x, y, w, h, d)=>{
-      if(d > 4 || w < size/12 || h < size/12){
-        g.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
-        if(r() < .5){ g.fillStyle = '#c8c8c8'; for(let k = 6; k < w - 6; k += size/28){ g.beginPath(); g.arc(x + k, y + 7, rivet, 0, 7); g.fill(); } }
+      if(d > 3 || w < size/6 || h < size/6){   // 大きめのパネル(近未来の機体は継ぎ目が少ない)
+        const tone = Math.round(206 + r()*34);   // パネルごとの微妙な色むら
+        ga.fillStyle = `rgb(${tone},${tone},${tone + 2})`; ga.fillRect(x + 1, y + 1, w - 2, h - 2);
+        g.strokeStyle = '#5a5a5a'; g.lineWidth = seam; g.strokeRect(x + 1, y + 1, w - 2, h - 2);
+        ga.strokeStyle = 'rgba(40,44,52,.55)'; ga.lineWidth = seam; ga.strokeRect(x + 1, y + 1, w - 2, h - 2);
+        if(r() < .22){ g.fillStyle = '#b4b4b4'; for(let k = 8; k < w - 8; k += size/22){ g.beginPath(); g.arc(x + k, y + 6, rivet, 0, 7); g.fill(); } }
         return;
       }
       if(w > h){ const k = w*(.3 + r()*.4); split(x, y, k, h, d + 1); split(x + k, y, w - k, h, d + 1); }
       else { const k = h*(.3 + r()*.4); split(x, y, w, k, d + 1); split(x, y + k, w, h - k, d + 1); }
     };
     split(0, 0, size, size, 0);
+    c.userData = {albedo: a};
     return c;
   }
   let _hullTex = null;
@@ -1555,11 +1561,12 @@ vec4 tpS(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy*tpScale)*w.x + t
       const nrm = mapCanvas(h, (H, x, y)=>{
         const dx = (H(x+1, y-1) + 2*H(x+1, y) + H(x+1, y+1)) - (H(x-1, y-1) + 2*H(x-1, y) + H(x-1, y+1));
         const dy = (H(x-1, y+1) + 2*H(x, y+1) + H(x+1, y+1)) - (H(x-1, y-1) + 2*H(x, y-1) + H(x+1, y-1));
-        const nx = -dx*2.2, ny = -dy*2.2, L = Math.hypot(nx, ny, 1);
+        const nx = -dx*1.2, ny = -dy*1.2, L = Math.hypot(nx, ny, 1);
         return [(nx/L*.5 + .5)*255, (ny/L*.5 + .5)*255, (1/L*.5 + .5)*255]; });
       const rgh = mapCanvas(h, (H, x, y)=>{ const v = Math.max(0, Math.min(1, .95 + (H(x, y) - .6)*.4))*255; return [v, v, v]; });
-      const tex = cv=>{ const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t; };
-      _hullTex = {normal: tex(nrm), rough: tex(rgh)};
+      const tex = (cv, srgb)=>{ const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
+        if(srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
+      _hullTex = {normal: tex(nrm), rough: tex(rgh), albedo: tex(h.userData.albedo, true)};
     }
     return _hullTex;
   }
@@ -1696,18 +1703,39 @@ vec4 tpS(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy*tpScale)*w.x + t
     geo.userData.hull = hull;
     return hull;
   }
-  // SPEC-09a F1-03: 機体を4球で近似(buildShipの形状: 機首Cone(1.3,5.2)を-z向き / 主翼Box(7.5,.3,2.4) at (0,-.4,1.2))
+  // SPEC-10(旧SPEC-09a F1-03): 機体の当たり形状。球({c,r})とカプセル({c,c2,r}=線分を太らせた形)で新しい機体の外形に沿わせる
+  // (後退翼・細長い胴体は少数の球では「空気」に当たる範囲が大きくなるため)
+  // 半径は「外板頂点の被覆 ≥95%」と「当たり体積の増加を抑える(旧4球比 +2割以内。実測: 被覆97.7%・体積1.14倍)」の両立で数値的に決定(SPEC-10 §4)
   const SHIP_SPHERES = [
-    {name:'nose',  c:[0, 0, -1.8],    r:.85},
-    {name:'body',  c:[0, -.1, .9],    r:1.35},
-    {name:'wingL', c:[-2.6, -.4, 1.2], r:1.15},
-    {name:'wingR', c:[ 2.6, -.4, 1.2], r:1.15}];
+    {name:'nose',   c:[0, .02, -2.35], c2:[0, .08, -.2],  r:.66},   // 機首〜キャノピー・機首下の機銃
+    {name:'body',   c:[0, .08, -.2],   c2:[0, .1, 2.85],  r:.85},   // 胴体後半
+    {name:'nacL',   c:[-1.55, -.18, .2], c2:[-1.55, -.18, 3.3], r:.58},
+    {name:'nacR',   c:[ 1.55, -.18, .2], c2:[ 1.55, -.18, 3.3], r:.58},
+    {name:'rootL',  c:[-.9, -.18, -.35], c2:[-2.9, -.32, 1.2], r:.35},   // 主翼の前縁
+    {name:'rootR',  c:[ .9, -.18, -.35], c2:[ 2.9, -.32, 1.2], r:.35},
+    {name:'trailL', c:[-.9, -.18, 2.6],  c2:[-2.9, -.32, 2.2], r:.35},  // 主翼の後縁
+    {name:'trailR', c:[ .9, -.18, 2.6],  c2:[ 2.9, -.32, 2.2], r:.35},
+    {name:'wingL',  c:[-3.25, -.38, 1.78], r:.72},                   // 翼端
+    {name:'wingR',  c:[ 3.25, -.38, 1.78], r:.72},
+    {name:'tailL',  c:[-.93, 1.0, 2.62], r:.54},                     // 垂直尾翼
+    {name:'tailR',  c:[ .93, 1.0, 2.62], r:.54}];
   const HIT_LENIENCY = .9;   // F1-04: 機体球の半径に乗算(見た目より少し甘く)
   function shipSpheresWorld(ship, out){
     ship.updateMatrixWorld();
-    out = out || SHIP_SPHERES.map(S=>({name:S.name, c:new THREE.Vector3(), r:S.r}));
-    SHIP_SPHERES.forEach((S, i)=>out[i].c.set(S.c[0], S.c[1], S.c[2]).applyMatrix4(ship.matrixWorld));
+    out = out || SHIP_SPHERES.map(S=>({name:S.name, c:new THREE.Vector3(), c2:S.c2 ? new THREE.Vector3() : null, r:S.r}));
+    SHIP_SPHERES.forEach((S, i)=>{
+      out[i].c.set(S.c[0], S.c[1], S.c[2]).applyMatrix4(ship.matrixWorld);
+      if(S.c2) out[i].c2.set(S.c2[0], S.c2[1], S.c2[2]).applyMatrix4(ship.matrixWorld);
+    });
     return out;
+  }
+  // カプセルの軸上で点 p に最も近い点(球はそのまま中心)
+  const _cp = new THREE.Vector3(), _ab = new THREE.Vector3();
+  function nearestOnPrim(S, p){
+    if(!S.c2) return S.c;
+    _ab.subVectors(S.c2, S.c);
+    const k = Math.min(1, Math.max(0, _cp.subVectors(p, S.c).dot(_ab)/_ab.lengthSq()));
+    return _cp.copy(S.c).addScaledVector(_ab, k);
   }
   // SPEC-09a F1-04/05/07: 岩表面と機体球のすき間(負=接触の深さ)。
   // sd: このフレームの岩の移動量(+z)。移動線分上の最接近点で測る(トンネリング防止)
@@ -1716,10 +1744,11 @@ vec4 tpS(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy*tpScale)*w.x + t
     const hull = rock.geometry.userData.hull || rockHull(rock.geometry), s = rock.userData.r, p = rock.position;
     let best = Infinity, inv = false;
     for(const S of sph){
+      const sc = nearestOnPrim(S, p);   // SPEC-10: カプセルは軸上の最寄り点を球の中心として扱う
       let k = 1;
-      if(sd > 0) k = Math.min(1, Math.max(0, (S.c.z - (p.z - sd))/sd));
+      if(sd > 0) k = Math.min(1, Math.max(0, (sc.z - (p.z - sd))/sd));
       _q.set(p.x, p.y, p.z - sd + sd*k);
-      _d.subVectors(S.c, _q);
+      _d.subVectors(sc, _q);
       const dist = _d.length(), rs = S.r*HIT_LENIENCY;
       const coarse = dist - hull.max*s - rs;
       if(coarse > 0){ if(coarse < best) best = coarse; continue; }
@@ -1768,44 +1797,144 @@ vec4 tpS(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy*tpScale)*w.x + t
     return m;
   }
   // 機体一式(SPEC-05 SHP仕様と同一)。partsは装飾更新用の参照
-  function buildShip(){
-    // SPEC-09b F2-07: 外板の emissive は通常 0(明るさは主光と映り込みで得る)。F6: パネルの法線/粗さで金属の映り込みを出す
+  // ===== SPEC-10: 機体(一体成形のステルス迎撃機)。すべて機体座標で生成し、メッシュは原点に置く =====
+  // 断面: 上が丸く・左右に稜線(チャイン)を持つ超楕円。p<1 で側面が尖る
+  function sectionPts(w, top, bot, cy, n, p){
+    const pts = [];
+    for(let k = 0; k < n; k++){
+      const a = k/n*Math.PI*2, c = Math.cos(a), s = Math.sin(a);
+      const x = w*Math.sign(c)*Math.pow(Math.abs(c), p);
+      const y = cy + (s >= 0 ? top : bot)*Math.sign(s)*Math.pow(Math.abs(s), p*1.35);
+      pts.push([x, y]);
+    }
+    return pts;
+  }
+  // 断面リスト [{z, w, top, bot, cy}] を滑らかにつなぐ。先端 tip は1点に収束、後端は面で閉じる
+  function loft(secs, {tip, n = 20, p = .62, cx = 0} = {}){
+    const pos = [], idx = [];
+    const rings = secs.map(S=>{
+      const base = pos.length/3;
+      for(const [x, y] of sectionPts(S.w, S.top, S.bot, S.cy || 0, n, S.p || p)) pos.push(cx + x, y, S.z);
+      return base;
+    });
+    for(let r = 0; r < rings.length - 1; r++) for(let k = 0; k < n; k++){
+      const a = rings[r] + k, b = rings[r] + (k + 1)%n, c = rings[r+1] + (k + 1)%n, d = rings[r+1] + k;
+      idx.push(a, b, c, a, c, d);
+    }
+    if(tip){   // 先端(扇形)
+      const t0 = pos.length/3; pos.push(cx + tip[0], tip[1], tip[2]);
+      for(let k = 0; k < n; k++) idx.push(t0, rings[0] + (k + 1)%n, rings[0] + k);
+    }
+    const last = rings[rings.length - 1], L = secs[secs.length - 1];   // 後端(平面)
+    const c0 = pos.length/3; pos.push(cx, L.cy || 0, L.z);
+    for(let k = 0; k < n; k++) idx.push(c0, last + k, last + (k + 1)%n);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    // 外向きの向きを保証(最初の側面の法線が軸から外を向かなければ反転)
+    const P = g.attributes.position, v = i=>new THREE.Vector3().fromBufferAttribute(P, i);
+    const A0 = v(idx[0]), B0 = v(idx[1]), C0 = v(idx[2]);
+    const nrm = B0.clone().sub(A0).cross(C0.clone().sub(A0));
+    const mid = A0.clone().add(B0).add(C0).multiplyScalar(1/3), out = mid.clone().sub(new THREE.Vector3(cx, secs[0].cy || 0, mid.z));
+    if(nrm.dot(out) < 0){ for(let i = 0; i < idx.length; i += 3){ const t = idx[i+1]; idx[i+1] = idx[i+2]; idx[i+2] = t; } g.setIndex(idx); }
+    g.computeVertexNormals();
+    g.userData.sections = secs.length;
+    return g;
+  }
+  // 平面形(Shape)を厚み+ベベルで押し出す板(主翼・尾翼)
+  function plate(pts, depth, bevel){
+    const sh = new THREE.Shape(); pts.forEach(([a, b], i)=>i ? sh.lineTo(a, b) : sh.moveTo(a, b));
+    return new THREE.ExtrudeGeometry(sh, {depth, bevelEnabled:true, bevelThickness:bevel, bevelSize:bevel*1.4, bevelSegments:2, curveSegments:1});
+  }
+  const SHIP = {
+    // 胴体の断面(z: 前が負)
+    fus: [{z:-2.45, w:.20, top:.12, bot:.10, cy:-.02}, {z:-1.80, w:.42, top:.26, bot:.20, cy:-.02},
+          {z:-1.00, w:.62, top:.40, bot:.28}, {z:-.10, w:.78, top:.50, bot:.34}, {z:.90, w:.86, top:.48, bot:.38},
+          {z:1.90, w:.80, top:.42, bot:.38}, {z:2.70, w:.62, top:.34, bot:.30, cy:.02}, {z:3.05, w:.50, top:.28, bot:.24, cy:.02}],
+    fusTip: [0, -.02, -2.85],
+    // キャノピー(胴体上面に溶け込む涙滴形)
+    canopy: [{z:-1.25, w:.16, top:.44, bot:.05, p:.9}, {z:-.75, w:.27, top:.62, bot:.05, p:.9}, {z:-.20, w:.30, top:.70, bot:.05, p:.9},
+             {z:.25, w:.24, top:.62, bot:.05, p:.9}, {z:.55, w:.12, top:.52, bot:.05, p:.9}],   // 下半分は胴体に埋まる
+    canopyTip: [0, .30, -1.6],
+    // エンジンナセル(左右 x=±1.55)
+    nac: [{z:.15, w:.32, top:.32, bot:.32, cy:-.18, p:1}, {z:.55, w:.50, top:.50, bot:.50, cy:-.18, p:1},
+          {z:1.40, w:.57, top:.57, bot:.57, cy:-.18, p:1}, {z:2.30, w:.55, top:.55, bot:.55, cy:-.18, p:1},
+          {z:2.95, w:.47, top:.47, bot:.47, cy:-.18, p:1}],
+    // 主翼の平面形(右翼, x-z)
+    wing: [[.70, -.55], [3.75, 1.45], [3.75, 2.05], [2.25, 2.35], [.70, 2.75]],
+    // 尾翼の側面形(z-y)
+    tail: [[1.55, 0], [2.45, 1.15], [2.85, 1.15], [2.95, 0]],
+    muzzles: [[-.45, -.36, -2.05], [.45, -.36, -2.05]]   // 機首下(チン)の機銃2門
+  };
+  // opts.glow: ノズル光の強さ(ゲームは遠景の後方から見るため1.8、サイトは近接で正対するため既定1.4)
+  function buildShip(opts = {}){
+    // 材質: チタンの外板(パネル模様) / グラファイトの暗色部 / 暗く映り込むガラス
     const ht = hullTextures();
     const hull = new THREE.MeshStandardMaterial({color:0xc4ccd8, metalness:.86, roughness:.34,
-      normalMap:ht.normal, roughnessMap:ht.rough, envMapIntensity:1.1});
+      map:ht.albedo, normalMap:ht.normal, roughnessMap:ht.rough, envMapIntensity:1.1});
+    const dark = new THREE.MeshStandardMaterial({color:0x262a31, metalness:.72, roughness:.46, envMapIntensity:.8});
+    const glass = new THREE.MeshStandardMaterial({color:0x0a1622, metalness:.9, roughness:.08, envMapIntensity:1.2, emissive:0x05161f});
     const group = new THREE.Group();
-    const nose = new THREE.Mesh(boxUV(new THREE.ConeGeometry(1.3, 5.2, 4)), hull);
-    nose.rotation.x = -Math.PI/2;
-    const wing = new THREE.Mesh(boxUV(new THREE.BoxGeometry(7.5, .3, 2.4)), hull);
-    wing.position.set(0, -.4, 1.2);
-    const fin = new THREE.Mesh(boxUV(new THREE.BoxGeometry(.3, 2.4, 1.8)), hull);
-    fin.position.set(0, .9, 1.6);
-    // F6-05: エンジン光は小さく芯だけ(HDR)に。発光の広がりはプルームが担う
-    const eng = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:hdr(0x00f0ff, 1.6), blending:THREE.AdditiveBlending, depthWrite:false}));
-    eng.scale.set(2, 2, 1); eng.position.set(0, 0, 3.2);
-    group.add(nose, wing, fin, eng);
-    const nozzles = new THREE.Mesh(boxUV(mergeGeo([
-      {g:new THREE.CylinderGeometry(.42, .58, 1.3, 12), p:[-1.6, -.15, 2.6], r:[Math.PI/2, 0, 0]},
-      {g:new THREE.CylinderGeometry(.42, .58, 1.3, 12), p:[ 1.6, -.15, 2.6], r:[Math.PI/2, 0, 0]},
-    ])), hull);
+    // 胴体
+    const fuselage = new THREE.Mesh(boxUV(loft(SHIP.fus, {tip: SHIP.fusTip})), hull);
+    fuselage.geometry.userData.sections = SHIP.fus.length;
+    // 主翼(左右を1メッシュに。わずかな下反角で翼端を下げる)
+    const wingGeo = side=>{
+      const pts = SHIP.wing.map(([x, z])=>[side*x, z]); if(side < 0) pts.reverse();
+      const g = plate(pts, .12, .045);
+      g.rotateX(Math.PI/2);                        // 平面形の y → 機体 z、押し出し → 下向きの厚み
+      g.translate(0, -.14, 0);
+      g.rotateZ(-side*.07);                        // 下反角
+      return g;
+    };
+    const wings = new THREE.Mesh(boxUV(mergeGeo([{g: wingGeo(1)}, {g: wingGeo(-1)}])), hull);
+    // 双垂直尾翼(外側へ傾ける)
+    const tailGeo = side=>{
+      const g = plate(SHIP.tail, .06, .025);
+      g.rotateY(-Math.PI/2);                       // 側面形の x → 機体 z、押し出し → 機体 x
+      g.rotateZ(-side*.32);
+      g.translate(side*.62, .26, 0);
+      return g;
+    };
+    const tails = new THREE.Mesh(boxUV(mergeGeo([{g: tailGeo(1)}, {g: tailGeo(-1)}])), hull);
+    // エンジンナセル(左右を1メッシュに)
+    const nacelles = new THREE.Mesh(boxUV(mergeGeo([{g: loft(SHIP.nac, {cx: 1.55, p: 1})}, {g: loft(SHIP.nac, {cx: -1.55, p: 1})}])), hull);
+    // キャノピー
+    const canopy = new THREE.Mesh(loft(SHIP.canopy, {tip: SHIP.canopyTip, n: 18}), glass);
+    // 暗色部: 吸気口・ノズル・機銃(砲身+ポッド)・尾翼の先端
+    const darkParts = new THREE.Mesh(mergeGeo([
+      {g:new THREE.CircleGeometry(.3, 16), p:[-1.55, -.18, .14], r:[0, Math.PI, 0]},
+      {g:new THREE.CircleGeometry(.3, 16), p:[ 1.55, -.18, .14], r:[0, Math.PI, 0]},
+      {g:loft([{z:-1.35, w:.11, top:.11, bot:.11, cy:-.36, p:1}, {z:.1, w:.11, top:.11, bot:.11, cy:-.36, p:1}], {cx:-.45, n:10, tip:[0, -.36, -1.5]})},
+      {g:loft([{z:-1.35, w:.11, top:.11, bot:.11, cy:-.36, p:1}, {z:.1, w:.11, top:.11, bot:.11, cy:-.36, p:1}], {cx: .45, n:10, tip:[0, -.36, -1.5]})},
+      {g:new THREE.CylinderGeometry(.04, .04, .65, 8), p:[-.45, -.36, -1.72], r:[Math.PI/2, 0, 0]},
+      {g:new THREE.CylinderGeometry(.04, .04, .65, 8), p:[ .45, -.36, -1.72], r:[Math.PI/2, 0, 0]},
+    ]), dark);
+    group.add(fuselage, wings, tails, nacelles, canopy, darkParts);
+    const nozzles = new THREE.Mesh(mergeGeo([   // ノズル(後端でわずかに広がる)
+      {g:new THREE.CylinderGeometry(.44, .40, .45, 16, 1, true), p:[-1.55, -.18, 3.12], r:[Math.PI/2, 0, 0]},
+      {g:new THREE.CylinderGeometry(.44, .40, .45, 16, 1, true), p:[ 1.55, -.18, 3.12], r:[Math.PI/2, 0, 0]},
+    ]), new THREE.MeshStandardMaterial({color:0x1b1e24, metalness:.8, roughness:.38, side:THREE.DoubleSide}));
     const nozzleGlow = new THREE.Mesh(mergeGeo([
-      {g:new THREE.CircleGeometry(.34, 14), p:[-1.6, -.15, 3.28]},
-      {g:new THREE.CircleGeometry(.34, 14), p:[ 1.6, -.15, 3.28]},
-    ]), new THREE.MeshBasicMaterial({color:hdr(0x7df1ff, 1.8), transparent:true, opacity:.9,
+      {g:new THREE.CircleGeometry(.34, 16), p:[-1.55, -.18, 3.2]},
+      {g:new THREE.CircleGeometry(.34, 16), p:[ 1.55, -.18, 3.2]},
+    ]), new THREE.MeshBasicMaterial({color:hdr(0x7df1ff, opts.glow ?? 1.4), transparent:true, opacity:.9,   // SPEC-10
       blending:THREE.AdditiveBlending, depthWrite:false}));
-    // F6-03: 排気は球状スプライト → プルーム(scale.y が長さ。既存の速度連動・Sortie のコードはそのまま動く)
+    // 排気プルーム(SPEC-09f。scale.y が長さ)
     const plumeMat = plumeMaterial();
     const ex1 = new THREE.Mesh(_plumeGeo, plumeMat), ex2 = new THREE.Mesh(_plumeGeo, plumeMat);
-    ex1.rotation.x = ex2.rotation.x = Math.PI/2;   // +y(長さ) を機体後方 +z へ
-    ex1.position.set(-1.6, -.15, 3.3); ex2.position.set(1.6, -.15, 3.3);
+    ex1.rotation.x = ex2.rotation.x = Math.PI/2;
+    ex1.position.set(-1.55, -.18, 3.3); ex2.position.set(1.55, -.18, 3.3);
+    // 翼端灯(左:赤 / 右:緑)
     const tipL = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:hdr(0xff4455, 1.5),
       transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false}));
     const tipR = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:hdr(0x55ff88, 1.5),
       transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false}));
-    tipL.position.set(-3.75, -.4, 1.2); tipR.position.set(3.75, -.4, 1.2);
-    tipL.scale.setScalar(1.1); tipR.scale.setScalar(1.1);
+    tipL.position.set(-3.8, -.4, 1.75); tipR.position.set(3.8, -.4, 1.75);
+    tipL.scale.setScalar(.9); tipR.scale.setScalar(.9);
     group.add(nozzles, nozzleGlow, ex1, ex2, tipL, tipR);
-    return {group, parts:{nozzles, nozzleGlow, exhaust:[ex1, ex2], tips:[tipL, tipR], hull, plumeMat}};
+    return {group, parts:{nozzles, nozzleGlow, exhaust:[ex1, ex2], tips:[tipL, tipR], hull, plumeMat,
+      fuselage, canopy, muzzles: SHIP.muzzles}};
   }
   return {deformRock, makeRockTex, mergeGeo, rockGeos, rockMats, buildCore, buildShip,
           rockSurface, setTriplanar, ROCK_TYPES,
@@ -1816,7 +1945,7 @@ vec4 tpS(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy*tpScale)*w.x + t
 const Spawner = (()=>{
   const FX = 46, FY = 34;                       // 機体の到達範囲(ゲームと同値)
   const KMAX = 1.4;                             // 岩の外接半径係数(RadialHull.max ≤ 1.372 の安全側)
-  const SHIP_HX = 3.9, SHIP_HY = 1.6, SHIP_HL = 2.6;   // 機体4球の外形(半幅/半高/半長)+余裕
+  const SHIP_HX = 3.9, SHIP_HY = 1.6, SHIP_HL = 3.2;   // 機体の外形(半幅/半高/半長)+余裕(SPEC-10: 全長6.2に合わせ半長3.2)
   // 公平性検証で仮定する横/縦の移動速度。機体は目標へ毎秒6(縦8)の指数追従で、端から端への初速は 500u/s を超える。
   // その半分未満(90/108)を仮定して安全側に取る(実測に基づき SPEC-09c の初期値 45 から改訂)
   const V_LAT = 90, V_LAT_Y = 108;
@@ -2166,7 +2295,7 @@ const AsteroidRun = (()=>{
     C.position.set(0, 4, 17);
 
     // SPEC-07a: 機体はAssetsファクトリから生成(構造はSPEC-05のまま)
-    const shipBuilt = Assets.buildShip();
+    const shipBuilt = Assets.buildShip({glow: 1.8});   // SPEC-10: ゲームは後方の遠景から見るためノズル光を強めに
     ship = shipBuilt.group;
     shipFx = shipBuilt.parts;
     ship.traverse(o=>{ if(o.isMesh && !o.material.transparent){ o.castShadow = true; o.receiveShadow = true; } });   // SPEC-09d
@@ -2791,6 +2920,7 @@ const AsteroidRun = (()=>{
     P.boostT = 0;
     glitchUntil = 0;
   }
+  const muzzlePoints = ()=>shipFx.muzzles.map(m=>ship.position.clone().add(new THREE.Vector3(...m)));
   function fire(){
     if(!playing || gpaused) return;
     const now = performance.now();
@@ -2804,8 +2934,7 @@ const AsteroidRun = (()=>{
     const tgt = findTarget(lockMode);   // 自動ロックオン中はレティクルと同じ狭いコーンで撃つ
     const aim = tgt ? tgt.position.clone()
                     : new THREE.Vector3(ship.position.x, ship.position.y, ship.position.z - 320);
-    tracer(ship.position.clone().add(new THREE.Vector3(-3.2, -1.2, 1)), aim);
-    tracer(ship.position.clone().add(new THREE.Vector3( 3.2, -1.2, 1)), aim);
+    for(const p of muzzlePoints()) tracer(p, aim);   // SPEC-10: 機銃の砲口から
     SoundEngine.gun();
     if(tgt){
       st.cores--;
@@ -3272,7 +3401,7 @@ const AsteroidRun = (()=>{
     for(let i = 0; i < Math.min(SHADOW_CASTERS, cand.length); i++) cand[i].castShadow = true;
   }
   // SPEC-09a: 岩×機体4球の判定(移動線分の最接近点で測るのでトンネリングしない)。false=ゲーム終了
-  const shipSph = Assets.SHIP_SPHERES.map(S=>({name:S.name, c:new THREE.Vector3(), r:S.r}));
+  const shipSph = Assets.SHIP_SPHERES.map(S=>({name:S.name, c:new THREE.Vector3(), c2:S.c2 ? new THREE.Vector3() : null, r:S.r}));
   function collide(now, sd, inv = false){
     if(inv) return true;
     Assets.shipSpheresWorld(ship, shipSph);
@@ -3485,6 +3614,7 @@ const AsteroidRun = (()=>{
       collideSd: (now, sd, inv)=>collide(now, sd, inv), addScore, stepCombo, score, destroyRock,   // SPEC-09e
       buzz: ms=>buzz(ms, true), fov: ()=>C.fov, hud,
       shipParts2: shipFx, bgFx, nearDust,   // SPEC-09f
+      muzzles: muzzlePoints,                 // SPEC-10
       collide: (now, measureOnly)=>{
         if(!measureOnly) return collide(now, 0);
         Assets.shipSpheresWorld(ship, shipSph);   // 性能計測用: 奥行きの除外なしで全岩を精査(最悪ケース)
@@ -3560,7 +3690,7 @@ const Guide = (()=>{
     }
     // 機体の照明: すれ違う岩は機体の真横に来るため前方円錐では当たらない。
     // 距離減衰する点光源で機体周囲(近距離)だけを照らし、接近した岩が明るく浮かぶようにする
-    sortie.headlight = new THREE.PointLight(0xcce9ff, 110, 42, 2.0);   // SPEC-09b: ACES下で外板の鏡面が白飛びしない強度に再較正
+    sortie.headlight = new THREE.PointLight(0xcce9ff, 95, 42, 2.0);   // SPEC-09b/10: ACES下で外板(新機体のベベル縁)の鏡面が白飛びしない強度
     scene.add(sortie.headlight);
   }
   function shipAt(t){
