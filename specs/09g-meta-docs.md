@@ -1,6 +1,6 @@
 # SPEC 09g — Phase F7: 称号・デイリーシード・戦績共有・ドキュメント整合
 
-状態: **Draft** ／ 親: [SPEC-09](09-realism-gameplay-policy.md) G5 ／ 前提: F3（シード付き生成・セクター）・F5（スコア内訳）Verified ／ 外部素材: 不要
+状態: **Verified (2026-09-23 phaseF7 16/16・run-all 19スイート全グリーン)** ／ 親: [SPEC-09](09-realism-gameplay-policy.md) G5 ／ 前提: F3（シード付き生成・セクター）・F5（スコア内訳）Verified ／ 外部素材: 不要
 
 ## 1. 目的
 
@@ -57,4 +57,4 @@ const rankOf = sector => RANKS.find(([n])=>sector >= n)[1];
 
 - run-all 全スイート（既存 12 + F1〜F7 の 7 = 19 スイート）が全グリーン
 - 本番（GitHub Pages）で PC / SP 横画面の通しプレイ確認
-- `labs/lookdev.html` を最終状態の比較（F0 = 開始前 / F7 = 完了後）に更新し、before/after を残す
+- before/after は `labs/before-after.html`（`labs/build_beforeafter.py` で git の着手前コードと現行コードから自動生成）に残す。提案時の `labs/lookdev.html` は記録として保持

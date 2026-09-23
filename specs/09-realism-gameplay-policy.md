@@ -1,6 +1,6 @@
 # SPEC 09 — リアル質感 × ゲーム品質向上 方針書
 
-状態: **Approved（2026-09-23 フェーズ順 P1→P7 で承認。詳細設計 09a〜09g / [実装計画](09-implementation-plan.md) 作成済み）** ／ 検証用プロトタイプ: [labs/lookdev.html](../labs/lookdev.html)
+状態: **Verified（2026-09-23 F1〜F7 全フェーズ完了。詳細設計 09a〜09g / [実装計画](09-implementation-plan.md) / before-after: [labs/before-after.html](../labs/before-after.html)）** ／ 検証用プロトタイプ: [labs/lookdev.html](../labs/lookdev.html)
 前提制約: CON-05(レティクルの色・透明度は不変) / 完全オフライン(外部CDN・外部素材なし) / ASTEROID RUNのみ / 通信ターミナルの形式は維持
 
 > 本書は「見直し → 根拠の計測 → 方針 → フェーズ計画」までを扱う。

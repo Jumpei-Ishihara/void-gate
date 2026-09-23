@@ -34,7 +34,9 @@ WEAPONS(着弾閃光で凍結→機関砲説明) → SURVIVAL(激突の瞬間で
 - スコア＝航行距離×10＋**ニアミス**（岩肌すれすれの通過 150点）＋**撃破**（100＋40×岩の大きさ）＋残コア×500。
   ニアミス・撃破・コア回収を4秒以内に続けるとコンボ倍率が上がる（5回×1.5 / 10回×2 / 20回×3 / 35回×4）。被弾でリセット
 - 被弾・撃破の瞬間にヒットストップ、ニアミスで風切り音とFOVキック。SPは被弾時に振動（起動メニューでOFF可）
-- 結果画面にスコアの内訳（到達セクター・距離・ニアミス・撃破・残コア・最大コンボ）を表示
+- 結果画面にスコアの内訳（到達セクター・距離・ニアミス・撃破・残コア・最大コンボ）、**称号**（CADET → PILOT → ACE → VOID RUNNER）、
+  自己ベスト上位5件を表示。**SHARE** で戦績を共有（Web Share / 非対応端末はクリップボードへコピー）
+- 起動メニューで **RANDOM（通常）/ DAILY（本日のコース）** を選択。DAILYは日付から配置が決まり、同じ日なら誰でも同じコース
 - 視点は起動メニューで **COCKPIT（操縦席）/ CHASE（追跡）** を選択
 
 | 操作 | PC | スマートフォン |
@@ -77,13 +79,14 @@ python3 -m http.server 8000
 |---|---|
 | [DESIGN.md](DESIGN.md) | デザイン仕様書（ビジュアル・インタラクション・ゲーム設計・SP対応） |
 | [QUALITY_PLAN.md](QUALITY_PLAN.md) | 素材クオリティ向上の方針書（Phase 1〜4、全実装済み） |
-| [specs/](specs/00-overview.md) | SDD詳細設計書 SPEC 00〜06（要件ID・受け入れ基準つき、全てVerified） |
-| [specs/09](specs/09-realism-gameplay-policy.md) | リアル質感×ゲーム品質向上: 方針書（承認済み）・詳細設計 09a〜09g・[実装計画](specs/09-implementation-plan.md)。比較ルックデブ: `labs/lookdev.html` |
+| [specs/](specs/00-overview.md) | SDD詳細設計書 SPEC 00〜09（要件ID・受け入れ基準つき） |
+| [specs/09](specs/09-realism-gameplay-policy.md) | リアル質感×ゲーム品質向上: 方針書・詳細設計 09a〜09g・[実装計画](specs/09-implementation-plan.md)（F1〜F7 全て Verified） |
+| [labs/before-after.html](labs/before-after.html) | SPEC-09 の before / after 比較（着手前のコードと本番コードを同じ配置・カメラで左右比較）。提案時のルックデブは `labs/lookdev.html` |
 | [HANDOFF.md](HANDOFF.md) | オフライン化完了報告（2026-06-12時点のスナップショット） |
 
 ## テスト
 
-`tests/phase1〜4.js`(ゲーム) + `tests/phaseA〜D・E1〜E3.js`(サイト) + `tests/phaseSEO.js` に受け入れテスト計179項目。`tests/run-all.js` で一括実行できます:
+`tests/phase1〜4.js`(ゲーム) + `tests/phaseA〜D・E1〜E3.js`(サイト) + `tests/phaseSEO.js` + `tests/phaseF1〜F7.js`(SPEC-09) に受け入れテスト計313項目（19スイート）。`tests/run-all.js` で一括実行できます:
 
 ```js
 fetch('tests/run-all.js').then(r=>r.text()).then(eval);   // 結果は window.__ALLRESULTS

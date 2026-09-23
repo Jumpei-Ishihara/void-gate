@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>VOID GATE — Before / After (SPEC-09)</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:system-ui,-apple-system,sans-serif}
+  canvas{position:fixed;top:0;height:100%;display:block}
+  #ca{left:0;width:50%} #cb{right:0;width:50%}
+  body.only-a #cb, body.only-b #ca{display:none}
+  body.only-a #ca, body.only-b #cb{width:100%}
+  .lbl{position:fixed;top:14px;padding:6px 12px;font:600 12px/1 system-ui;letter-spacing:.12em;
+       color:#dff;background:rgba(0,10,20,.6);border:1px solid rgba(0,240,255,.35);z-index:2}
+  #la{left:14px} #lb{left:calc(50% + 14px)}
+  body.only-a #lb, body.only-b #la{display:none}
+  body.only-b #lb{left:14px}
+  #divider{position:fixed;left:50%;top:0;bottom:0;width:1px;background:rgba(0,240,255,.5);z-index:2}
+  body.only-a #divider, body.only-b #divider{display:none}
+  #ui{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:6px;z-index:3;flex-wrap:wrap;justify-content:center}
+  #ui button{font:600 12px system-ui;padding:8px 12px;color:#dff;background:rgba(0,10,20,.75);
+       border:1px solid rgba(0,240,255,.4);cursor:pointer}
+  #ui button.on{background:rgba(0,240,255,.25)}
+</style>
+</head>
+<body>
+<canvas id="ca"></canvas><canvas id="cb"></canvas><div id="divider"></div>
+<div class="lbl" id="la">BEFORE — SPEC-09 着手前</div>
+<div class="lbl" id="lb">AFTER — F1〜F7 完了後(本番と同一コード)</div>
+<div id="ui">
+  <button data-v="split" class="on">左右比較</button><button data-v="a">BEFOREのみ</button><button data-v="b">AFTERのみ</button>
+  <button data-cam="chase" class="on">追跡視点</button><button data-cam="close">岩の接写</button><button data-cam="ship">機体の接写</button>
+  <button id="pause">一時停止</button>
+</div>
+<script type="importmap">
+{"imports":{"three":"../libs/three.module.js","three/addons/":"../libs/addons/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
+import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
+import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
+import {ShaderPass} from 'three/addons/postprocessing/ShaderPass.js';
+const IS_TOUCH = false;
+
+/* ---- BEFORE: git 6f7cb79 の index.html から自動抽出 ---- */
+const Old = (()=>{
+function glowTexture(inner='rgba(255,255,255,1)', outer='rgba(255,255,255,0)'){
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32,32,0,32,32,32);
+  grad.addColorStop(0, inner); grad.addColorStop(.35,'rgba(255,255,255,.45)');
+  grad.addColorStop(1, outer);
+  g.fillStyle = grad; g.fillRect(0,0,64,64);
+  return new THREE.CanvasTexture(c);
+}
+const starTex = glowTexture();
+const Assets = (()=>{
+  // 岩の頂点変位(seed付き再現性): 大起伏(sin合成) + クレーター凹み(AST-01/02)
+  function deformRock(geo, seed){
+    let s = seed>>>0;
+    const rnd = ()=>((s = (s*1664525 + 1013904223)>>>0) / 4294967296);
+    const dirs = [], amp = [], ph = [];
+    for(let i = 0; i < 4; i++){
+      dirs.push(new THREE.Vector3(rnd()*4-2, rnd()*4-2, rnd()*4-2));
+      ph.push(rnd()*6.283); amp.push(.05 + .09*rnd());
+    }
+    const craters = [];
+    const nC = 4 + Math.floor(rnd()*4);
+    for(let i = 0; i < nC; i++) craters.push({
+      d: new THREE.Vector3(rnd()-.5, rnd()-.5, rnd()-.5).normalize(),
+      depth: .07 + .09*rnd(), cos: .80 + .08*rnd()});
+    const pos = geo.attributes.position, v = new THREE.Vector3();
+    for(let i = 0; i < pos.count; i++){
+      v.fromBufferAttribute(pos, i);
+      const n = v.clone().normalize();
+      let k = 1;
+      for(let j = 0; j < 4; j++) k += amp[j]*Math.sin(n.dot(dirs[j])*3 + ph[j]);
+      for(const c of craters){
+        const d = n.dot(c.d);
+        if(d > c.cos) k -= c.depth*((d - c.cos)/(1 - c.cos));
+      }
+      v.setLength(Math.max(.4, k));
+      pos.setXYZ(i, v.x, v.y, v.z);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }
+  // プロシージャル岩テクスチャ(AST-03): 明暗斑 + クレーター錯覚スポット + 粒状ノイズ
+  function makeRockTex(size){
+    const cv = document.createElement('canvas'); cv.width = cv.height = size;
+    const g = cv.getContext('2d');
+    g.fillStyle = '#8d8d94'; g.fillRect(0, 0, size, size);
+    for(let o = 0; o < 4; o++){
+      const n = 26<<o, cell = size/Math.sqrt(n);
+      for(let i = 0; i < n; i++){
+        const a = .05/(o+1);
+        g.fillStyle = Math.random() < .5 ? `rgba(255,255,255,${a})` : `rgba(0,0,10,${a*1.4})`;
+        g.beginPath();
+        g.arc(Math.random()*size, Math.random()*size, cell*(.4+Math.random()*.8), 0, 7);
+        g.fill();
+      }
+    }
+    for(let i = 0; i < 34; i++){   // 暗スポット(クレーター錯覚)
+      const x = Math.random()*size, y = Math.random()*size, r = size*(.015+Math.random()*.045);
+      const rg = g.createRadialGradient(x, y, r*.2, x, y, r);
+      rg.addColorStop(0, 'rgba(0,0,8,.34)'); rg.addColorStop(.75, 'rgba(0,0,8,.12)'); rg.addColorStop(1, 'rgba(0,0,8,0)');
+      g.fillStyle = rg; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+    }
+    const id = g.getImageData(0, 0, size, size), d = id.data;   // 微細粒
+    for(let i = 0; i < d.length; i += 4){
+      const n = (Math.random()-.5)*18;
+      d[i] += n; d[i+1] += n; d[i+2] += n;
+    }
+    g.putImageData(id, 0, 0);
+    const tx = new THREE.CanvasTexture(cv);
+    tx.colorSpace = THREE.SRGBColorSpace;
+    tx.wrapS = tx.wrapT = THREE.RepeatWrapping;
+    return tx;
+  }
+  // 同一マテリアル前提の静的ジオメトリ結合(draw call削減, CPT-06)
+  function mergeGeo(parts){
+    const geos = parts.map(({g, p=[0,0,0], r=[0,0,0]})=>{
+      const o = new THREE.Object3D();
+      o.position.set(...p); o.rotation.set(...r);
+      o.updateMatrix();
+      return g.toNonIndexed().applyMatrix4(o.matrix);
+    });
+    let total = 0; geos.forEach(g=>total += g.attributes.position.count);
+    const pos = new Float32Array(total*3), nor = new Float32Array(total*3);
+    let off = 0;
+    for(const g of geos){
+      pos.set(g.attributes.position.array, off*3);
+      nor.set(g.attributes.normal.array, off*3);
+      off += g.attributes.position.count;
+      g.dispose();
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    return out;
+  }
+
+  let _rockGeos = null, _rockMats = null, _coreShared = null;
+  function rockGeos(){
+    if(!_rockGeos){
+      _rockGeos = [];
+      for(let g = 0; g < 8; g++)
+        _rockGeos.push(deformRock(new THREE.IcosahedronGeometry(1, IS_TOUCH ? 2 : 3), 1000 + g*77));
+    }
+    return _rockGeos;
+  }
+  function rockMats(){
+    if(!_rockMats){
+      const tx = makeRockTex(IS_TOUCH ? 256 : 512);
+      _rockMats = [0x8a8fa8, 0x9a8878, 0x7d88a8].map(c=>new THREE.MeshStandardMaterial({
+        color:c, map:tx, bumpMap:tx, bumpScale:.06, roughness:.95, metalness:.1}));
+    }
+    return _rockMats;
+  }
+  // エネルギーコア(内核+halo+二重リング) — SPEC-05 COR仕様と同一
+  function buildCore(){
+    if(!_coreShared) _coreShared = {
+      geo: new THREE.OctahedronGeometry(1.6),
+      ringA: new THREE.TorusGeometry(2.4, .09, 6, 24),
+      ringB: new THREE.TorusGeometry(3.0, .055, 6, 24),
+      matA: new THREE.MeshBasicMaterial({color:0x00f0ff, transparent:true, opacity:.7, blending:THREE.AdditiveBlending, depthWrite:false}),
+      matB: new THREE.MeshBasicMaterial({color:0xbffcff, transparent:true, opacity:.45, blending:THREE.AdditiveBlending, depthWrite:false})};
+    const m = new THREE.Mesh(_coreShared.geo,
+      new THREE.MeshBasicMaterial({color:0x00f0ff, transparent:true, opacity:.95, blending:THREE.AdditiveBlending}));
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x00f0ff, blending:THREE.AdditiveBlending, depthWrite:false}));
+    halo.scale.set(9, 9, 1);
+    const ring1 = new THREE.Mesh(_coreShared.ringA, _coreShared.matA); ring1.rotation.x = .5;
+    const ring2 = new THREE.Mesh(_coreShared.ringB, _coreShared.matB); ring2.rotation.z = .9;
+    m.add(halo, ring1, ring2);
+    m.userData.ring1 = ring1; m.userData.ring2 = ring2;
+    return m;
+  }
+  // 機体一式(SPEC-05 SHP仕様と同一)。partsは装飾更新用の参照
+  function buildShip(){
+    const hull = new THREE.MeshStandardMaterial({color:0xbfd8ff, metalness:.85, roughness:.35, emissive:0x16335f});
+    const group = new THREE.Group();
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(1.3, 5.2, 4), hull);
+    nose.rotation.x = -Math.PI/2;
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(7.5, .3, 2.4), hull);
+    wing.position.set(0, -.4, 1.2);
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(.3, 2.4, 1.8), hull);
+    fin.position.set(0, .9, 1.6);
+    const eng = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x00f0ff, blending:THREE.AdditiveBlending, depthWrite:false}));
+    eng.scale.set(4, 4, 1); eng.position.set(0, 0, 3.2);
+    group.add(nose, wing, fin, eng);
+    const nozzles = new THREE.Mesh(mergeGeo([
+      {g:new THREE.CylinderGeometry(.42, .58, 1.3, 12), p:[-1.6, -.15, 2.6], r:[Math.PI/2, 0, 0]},
+      {g:new THREE.CylinderGeometry(.42, .58, 1.3, 12), p:[ 1.6, -.15, 2.6], r:[Math.PI/2, 0, 0]},
+    ]), hull);
+    const nozzleGlow = new THREE.Mesh(mergeGeo([
+      {g:new THREE.CircleGeometry(.34, 14), p:[-1.6, -.15, 3.28]},
+      {g:new THREE.CircleGeometry(.34, 14), p:[ 1.6, -.15, 3.28]},
+    ]), new THREE.MeshBasicMaterial({color:0x7df1ff, transparent:true, opacity:.9,
+      blending:THREE.AdditiveBlending, depthWrite:false}));
+    const exMat = new THREE.SpriteMaterial({map:starTex, color:0x66e8ff, transparent:true,
+      opacity:.55, blending:THREE.AdditiveBlending, depthWrite:false});
+    const ex1 = new THREE.Sprite(exMat), ex2 = new THREE.Sprite(exMat);
+    ex1.position.set(-1.6, -.15, 4.0); ex2.position.set(1.6, -.15, 4.0);
+    const tipL = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0xff4455,
+      transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false}));
+    const tipR = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x55ff88,
+      transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false}));
+    tipL.position.set(-3.75, -.4, 1.2); tipR.position.set(3.75, -.4, 1.2);
+    tipL.scale.setScalar(1.1); tipR.scale.setScalar(1.1);
+    group.add(nozzles, nozzleGlow, ex1, ex2, tipL, tipR);
+    return {group, parts:{nozzles, nozzleGlow, exhaust:[ex1, ex2], tips:[tipL, tipR]}};
+  }
+  return {deformRock, makeRockTex, mergeGeo, rockGeos, rockMats, buildCore, buildShip};
+})();
+return {Assets, starTex};
+})();
+
+/* ---- AFTER: 現行 index.html から自動抽出(本番と同一) ---- */
+const New = (()=>{
+function glowTexture(inner='rgba(255,255,255,1)', outer='rgba(255,255,255,0)'){
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32,32,0,32,32,32);
+  grad.addColorStop(0, inner); grad.addColorStop(.35,'rgba(255,255,255,.45)');
+  grad.addColorStop(1, outer);
+  g.fillStyle = grad; g.fillRect(0,0,64,64);
+  return new THREE.CanvasTexture(c);
+}
+const starTex = glowTexture();
+const Look = (()=>{
+  const LOOK = {keyDir: new THREE.Vector3(-60, 35, 40), keyColor: 0xfff0dc, keyI: 7.5,
+                hemiSky: 0x2a3e66, hemiGround: 0x0a0710, hemiI: .9,
+                rimDir: new THREE.Vector3(40, 18, -70), rimColor: 0x6fb8ff, rimI: 2.4,
+                exposure: 1.0, fog: 0x01010a};
+  // 恒星の輝点+ハロー+淡い星雲を持つ手続き的な空を PMREM で映り込み用に変換(外部HDRI不要)
+  function spaceEnv(renderer, keyDir = LOOK.keyDir){
+    const sc = new THREE.Scene();
+    const geo = new THREE.SphereGeometry(10, 64, 32);
+    const mat = new THREE.ShaderMaterial({side: THREE.BackSide, depthWrite: false,
+      uniforms: {kd: {value: keyDir.clone().normalize()}},
+      vertexShader: `varying vec3 vd; void main(){ vd = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position, 1.); }`,
+      fragmentShader: `uniform vec3 kd; varying vec3 vd;
+        void main(){ vec3 d = normalize(vd); float k = max(dot(d, kd), 0.);
+          vec3 c = vec3(.006, .008, .018);
+          c += vec3(1., .93, .82)*pow(k, 900.)*60.;
+          c += vec3(1., .85, .7)*pow(k, 24.)*.35;
+          c += vec3(.25, .12, .45)*smoothstep(.2, 1., d.y*.5 + .5)*.05;
+          c += vec3(0., .25, .35)*smoothstep(.4, 1., -d.x)*.03;
+          gl_FragColor = vec4(c, 1.); }`});
+    sc.add(new THREE.Mesh(geo, mat));
+    const pm = new THREE.PMREMGenerator(renderer);
+    const rt = pm.fromScene(sc, .02);
+    pm.dispose(); geo.dispose(); mat.dispose();
+    return rt.texture;
+  }
+  function rig(scene, o = {}){
+    const hemi = new THREE.HemisphereLight(LOOK.hemiSky, LOOK.hemiGround, o.hemiI ?? LOOK.hemiI);
+    const key = new THREE.DirectionalLight(LOOK.keyColor, o.keyI ?? LOOK.keyI);
+    key.position.copy(o.keyDir || LOOK.keyDir);
+    const rim = new THREE.DirectionalLight(LOOK.rimColor, o.rimI ?? LOOK.rimI);
+    rim.position.copy(o.rimDir || LOOK.rimDir);
+    scene.add(hemi, key, key.target, rim);
+    return {hemi, key, rim};
+  }
+  // three r160 の ACESFilmicToneMapping と同一式(線形→線形0..1)。仕上げ効果はF6で追加
+  // SPEC-09f F6-10: 仕上げ(ビネット・粒状ノイズ・周辺の色収差)を ACES の後に適用。
+  // 粒状ノイズは知覚空間(≒sRGB)で加え、暗部だけが荒れないようにする。encode=1 は最終パス用(sRGB化まで行う)
+  const GradeShader = {
+    uniforms: {tDiffuse: {value: null}, exposure: {value: LOOK.exposure},
+               vig: {value: .32}, grain: {value: .016}, ca: {value: .0016}, time: {value: 0}, encode: {value: 0}},
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position, 1.); }`,
+    fragmentShader: `uniform sampler2D tDiffuse; uniform float exposure, vig, grain, ca, time, encode; varying vec2 vUv;
+      vec3 vgRRTODT(vec3 v){ vec3 a = v*(v + .0245786) - .000090537; vec3 b = v*(.983729*v + .4329510) + .238081; return a/b; }
+      vec3 vgAces(vec3 c){
+        const mat3 I = mat3(vec3(.59719, .07600, .02840), vec3(.35458, .90834, .13383), vec3(.04823, .01566, .83777));
+        const mat3 O = mat3(vec3(1.60475, -.10208, -.00327), vec3(-.53108, 1.10813, -.07276), vec3(-.07367, -.00605, 1.07602));
+        c *= exposure/.6; c = I*c; c = vgRRTODT(c); c = O*c; return clamp(c, 0., 1.); }
+      float vgHash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)))*43758.5453); }
+      vec3 vgSrgb(vec3 c){ return mix(c*12.92, 1.055*pow(c, vec3(1./2.4)) - .055, step(.0031308, c)); }
+      void main(){
+        vec2 d = vUv - .5; float r2 = dot(d, d);
+        vec3 c = vgAces(texture2D(tDiffuse, vUv).rgb);
+        if(ca > 0.){ c.r = vgAces(texture2D(tDiffuse, vUv + d*ca*r2*8.).rgb).r; c.b = vgAces(texture2D(tDiffuse, vUv - d*ca*r2*8.).rgb).b; }
+        c *= 1. - vig*smoothstep(.08, .55, r2);
+        if(grain > 0.){ vec3 p = pow(c, vec3(1./2.2)); p += (vgHash(vUv*1000. + time) - .5)*grain; c = pow(clamp(p, 0., 1.), vec3(2.2)); }
+        c = clamp(c, 0., 1.);
+        gl_FragColor = vec4(encode > .5 ? vgSrgb(c) : c, 1.); }`};
+  return {LOOK, spaceEnv, rig, GradeShader};
+})();
+const Assets = (()=>{
+  // SPEC-09b F2-06: 本当に光る物は線形値を 1 超(HDR)にし、bloom(閾値1.0)が発光体だけを拾うようにする
+  const hdr = (hex, k)=>new THREE.Color(hex).multiplyScalar(k);
+  // 岩の頂点変位(seed付き再現性): 大起伏(sin合成) + クレーター凹み(AST-01/02)
+  function deformRock(geo, seed){
+    let s = seed>>>0;
+    const rnd = ()=>((s = (s*1664525 + 1013904223)>>>0) / 4294967296);
+    const dirs = [], amp = [], ph = [];
+    for(let i = 0; i < 4; i++){
+      dirs.push(new THREE.Vector3(rnd()*4-2, rnd()*4-2, rnd()*4-2));
+      ph.push(rnd()*6.283); amp.push(.05 + .09*rnd());
+    }
+    const craters = [];
+    const nC = 4 + Math.floor(rnd()*4);
+    for(let i = 0; i < nC; i++) craters.push({
+      d: new THREE.Vector3(rnd()-.5, rnd()-.5, rnd()-.5).normalize(),
+      depth: .07 + .09*rnd(), cos: .80 + .08*rnd()});
+    const pos = geo.attributes.position, v = new THREE.Vector3();
+    for(let i = 0; i < pos.count; i++){
+      v.fromBufferAttribute(pos, i);
+      const n = v.clone().normalize();
+      let k = 1;
+      for(let j = 0; j < 4; j++) k += amp[j]*Math.sin(n.dot(dirs[j])*3 + ph[j]);
+      for(const c of craters){
+        const d = n.dot(c.d);
+        if(d > c.cos) k -= c.depth*((d - c.cos)/(1 - c.cos));
+      }
+      v.setLength(Math.max(.4, k));
+      pos.setXYZ(i, v.x, v.y, v.z);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }
+  // ===== SPEC-09d: 岩の表面(シード付き・継ぎ目なし)。高さ → アルベド/法線(Sobel)/粗さ を同じ模様から派生 =====
+  const srng = seed=>{ let a = seed >>> 0;
+    return ()=>{ a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0)/4294967296; }; };
+  function rockHeightCanvas(size, seed){
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const g = c.getContext('2d'), r = srng(seed);
+    g.fillStyle = '#808080'; g.fillRect(0, 0, size, size);
+    // 端をまたぐ円は反対側にも描いてタイル状に継ぎ目なくする(トライプラナーで繰り返すため)
+    const wrapped = (x, y, rad, paint)=>{
+      for(const ox of [-size, 0, size]) for(const oy of [-size, 0, size]){
+        const px = x + ox, py = y + oy;
+        if(px + rad < 0 || px - rad > size || py + rad < 0 || py - rad > size) continue;
+        paint(px, py);
+      } };
+    for(let o = 0; o < 5; o++){   // 多オクターブのまだら
+      const n = 30 << o, cell = size/Math.sqrt(n);
+      for(let i = 0; i < n; i++){
+        const x = r()*size, y = r()*size, rad = cell*(.4 + r()*.9);
+        g.fillStyle = r() < .5 ? `rgba(255,255,255,${.07/(o+1)})` : `rgba(0,0,0,${.09/(o+1)})`;
+        wrapped(x, y, rad, (px, py)=>{ g.beginPath(); g.arc(px, py, rad, 0, 7); g.fill(); });
+      }
+    }
+    for(let i = 0; i < 60; i++){   // クレーター(底が凹み、縁が盛り上がる)
+      const x = r()*size, y = r()*size, rad = size*(.008 + Math.pow(r(), 2.2)*.06);
+      wrapped(x, y, rad*1.25, (px, py)=>{
+        const rg = g.createRadialGradient(px, py, 0, px, py, rad*1.25);
+        rg.addColorStop(0, 'rgba(0,0,0,.55)'); rg.addColorStop(.72, 'rgba(0,0,0,.18)');
+        rg.addColorStop(.86, 'rgba(255,255,255,.28)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = rg; g.beginPath(); g.arc(px, py, rad*1.25, 0, 7); g.fill();
+      });
+    }
+    const id = g.getImageData(0, 0, size, size), d = id.data;   // 微細な粒
+    for(let i = 0; i < d.length; i += 4){ const nn = (r() - .5)*26; d[i] += nn; d[i+1] += nn; d[i+2] += nn; }
+    g.putImageData(id, 0, 0);
+    return c;
+  }
+  function mapCanvas(src, fn){   // 高さ(グレー)から画素ごとに派生マップを作る
+    const w = src.width, sd = src.getContext('2d').getImageData(0, 0, w, w).data;
+    const out = document.createElement('canvas'); out.width = out.height = w;
+    const oc = out.getContext('2d'), od = oc.createImageData(w, w);
+    const H = (x, y)=>sd[((((y % w) + w) % w)*w + (((x % w) + w) % w))*4]/255;
+    for(let y = 0; y < w; y++) for(let x = 0; x < w; x++){
+      const v = fn(H, x, y), i = (y*w + x)*4;
+      od.data[i] = v[0]; od.data[i+1] = v[1]; od.data[i+2] = v[2]; od.data[i+3] = 255;
+    }
+    oc.putImageData(od, 0, 0);
+    return out;
+  }
+  function rockSurface(size, seed){
+    const height = rockHeightCanvas(size, seed);
+    const albedo = mapCanvas(height, (H, x, y)=>{   // 凹部を暗く・縁を明るく(AOと同じ見え方)
+      const v = Math.max(0, Math.min(255, (.64 + (H(x, y) - .5)*.95)*255)); return [v, v, v]; });
+    const normal = mapCanvas(height, (H, x, y)=>{   // Sobel(端はタイルとして折り返す)
+      const dx = (H(x+1, y-1) + 2*H(x+1, y) + H(x+1, y+1)) - (H(x-1, y-1) + 2*H(x-1, y) + H(x-1, y+1));
+      const dy = (H(x-1, y+1) + 2*H(x, y+1) + H(x+1, y+1)) - (H(x-1, y-1) + 2*H(x, y-1) + H(x+1, y-1));
+      const nx = -dx*3.2, ny = -dy*3.2, L = Math.hypot(nx, ny, 1);
+      return [(nx/L*.5 + .5)*255, (ny/L*.5 + .5)*255, (1/L*.5 + .5)*255]; });
+    const rough = mapCanvas(height, (H, x, y)=>{ const v = Math.max(0, Math.min(1, .88 + (H(x, y) - .5)*.25))*255; return [v, v, v]; });
+    return {height, albedo, normal, rough};
+  }
+  // 互換API(AST-03): 岩のアルベドテクスチャ
+  function makeRockTex(size, seed = 20260923){
+    const tx = new THREE.CanvasTexture(rockSurface(size, seed).albedo);
+    tx.colorSpace = THREE.SRGBColorSpace;
+    tx.wrapS = tx.wrapT = THREE.RepeatWrapping;
+    return tx;
+  }
+  // トライプラナー投影(岩ローカル空間。UVに依存しないので面ごとの引き伸ばしがなく、自転しても模様が岩に固定される)
+  function triplanar(mat){
+    mat.defines = {...(mat.defines || {}), TRIPLANAR: ''};
+    mat.onBeforeCompile = sh=>{
+      sh.uniforms.tpScale = {value: .42};
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vObjPos; varying vec3 vObjN;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObjPos = position; vObjN = normal;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+varying vec3 vObjPos; varying vec3 vObjN; uniform float tpScale;
+#ifdef TRIPLANAR
+uniform mat4 modelMatrix;
+vec3 tpW(vec3 n){ vec3 w = pow(abs(n), vec3(4.)); return w/(w.x + w.y + w.z); }
+vec4 tpS(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy*tpScale)*w.x + texture2D(t, p.xz*tpScale)*w.y + texture2D(t, p.xy*tpScale)*w.z; }
+#endif`)
+        .replace('#include <map_fragment>', `#ifdef TRIPLANAR
+  diffuseColor *= tpS(map, vObjPos, tpW(normalize(vObjN)));
+#else
+  #include <map_fragment>
+#endif`)
+        .replace('#include <roughnessmap_fragment>', `#ifdef TRIPLANAR
+  float roughnessFactor = roughness*tpS(roughnessMap, vObjPos, tpW(normalize(vObjN))).g;
+#else
+  #include <roughnessmap_fragment>
+#endif`)
+        .replace('#include <normal_fragment_maps>', `#ifdef TRIPLANAR
+  { vec3 on = normalize(vObjN), bw = tpW(on);   // whiteout ブレンド
+    vec3 nx = texture2D(normalMap, vObjPos.zy*tpScale).xyz*2. - 1.; nx.xy *= normalScale;
+    vec3 ny = texture2D(normalMap, vObjPos.xz*tpScale).xyz*2. - 1.; ny.xy *= normalScale;
+    vec3 nz = texture2D(normalMap, vObjPos.xy*tpScale).xyz*2. - 1.; nz.xy *= normalScale;
+    nx = vec3(nx.xy + on.zy, abs(nx.z)*on.x);
+    ny = vec3(ny.xy + on.xz, abs(ny.z)*on.y);
+    nz = vec3(nz.xy + on.xy, abs(nz.z)*on.z);
+    vec3 objN = normalize(nx.zyx*bw.x + ny.xzy*bw.y + nz.xyz*bw.z);
+    normal = normalize(mat3(viewMatrix*modelMatrix)*objN)*faceDirection; }
+#else
+  #include <normal_fragment_maps>
+#endif`);
+    };
+    return mat;
+  }
+  // ===== SPEC-09f: 機体外板(パネルの継ぎ目+リベット)。高さ → 法線/粗さ =====
+  function hullHeightCanvas(size, seed){
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const g = c.getContext('2d'), r = srng(seed);
+    g.fillStyle = '#9a9a9a'; g.fillRect(0, 0, size, size);
+    g.strokeStyle = '#3a3a3a'; g.lineWidth = Math.max(2, size/170);
+    const rivet = Math.max(1.4, size/230);
+    const split = (x, y, w, h, d)=>{
+      if(d > 4 || w < size/12 || h < size/12){
+        g.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
+        if(r() < .5){ g.fillStyle = '#c8c8c8'; for(let k = 6; k < w - 6; k += size/28){ g.beginPath(); g.arc(x + k, y + 7, rivet, 0, 7); g.fill(); } }
+        return;
+      }
+      if(w > h){ const k = w*(.3 + r()*.4); split(x, y, k, h, d + 1); split(x + k, y, w - k, h, d + 1); }
+      else { const k = h*(.3 + r()*.4); split(x, y, w, k, d + 1); split(x, y + k, w, h - k, d + 1); }
+    };
+    split(0, 0, size, size, 0);
+    return c;
+  }
+  let _hullTex = null;
+  function hullTextures(){
+    if(!_hullTex){
+      const h = hullHeightCanvas(IS_TOUCH ? 256 : 512, 17);
+      const nrm = mapCanvas(h, (H, x, y)=>{
+        const dx = (H(x+1, y-1) + 2*H(x+1, y) + H(x+1, y+1)) - (H(x-1, y-1) + 2*H(x-1, y) + H(x-1, y+1));
+        const dy = (H(x-1, y+1) + 2*H(x, y+1) + H(x+1, y+1)) - (H(x-1, y-1) + 2*H(x, y-1) + H(x+1, y-1));
+        const nx = -dx*2.2, ny = -dy*2.2, L = Math.hypot(nx, ny, 1);
+        return [(nx/L*.5 + .5)*255, (ny/L*.5 + .5)*255, (1/L*.5 + .5)*255]; });
+      const rgh = mapCanvas(h, (H, x, y)=>{ const v = Math.max(0, Math.min(1, .95 + (H(x, y) - .6)*.4))*255; return [v, v, v]; });
+      const tex = cv=>{ const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t; };
+      _hullTex = {normal: tex(nrm), rough: tex(rgh)};
+    }
+    return _hullTex;
+  }
+  // 箱投影UV: 三角形ごとに面の向きの主軸でUVを振る(面ごとに模様の密度が揃う)
+  function boxUV(geo, scale = .35){
+    const g = geo.index ? geo.toNonIndexed() : geo, p = g.attributes.position;
+    const uv = new Float32Array(p.count*2), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3();
+    for(let i = 0; i < p.count; i += 3){
+      a.fromBufferAttribute(p, i); b.fromBufferAttribute(p, i+1); c.fromBufferAttribute(p, i+2);
+      n.subVectors(b, a).cross(c.clone().sub(a));
+      const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+      for(let k = 0; k < 3; k++){
+        const v = k === 0 ? a : k === 1 ? b : c;
+        const [u, w] = ax >= ay && ax >= az ? [v.z, v.y] : ay >= az ? [v.x, v.z] : [v.x, v.y];
+        uv[(i + k)*2] = u*scale; uv[(i + k)*2 + 1] = w*scale;
+      }
+    }
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    return g;
+  }
+  // SPEC-09f F6-03: 排気プルーム(長さ方向=ローカル+y、根元が白〜シアン・先端へ青く消える、時間ノイズで揺らぐ)
+  const _plumeGeo = new THREE.CylinderGeometry(.05, .45, 1, 16, 8, true).translate(0, .5, 0);
+  function plumeMaterial(){
+    return new THREE.ShaderMaterial({transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide,
+      uniforms:{time:{value:0}, strength:{value:.6},
+        hot:{value:new THREE.Color(0xdffcff).multiplyScalar(1.8)}, cool:{value:new THREE.Color(0x2a7bff)}},
+      vertexShader:`varying vec2 vUv; varying float vF;
+        void main(){ vUv = uv; vec4 mv = modelViewMatrix*vec4(position, 1.);
+          vF = abs(dot(normalize(normalMatrix*normal), normalize(-mv.xyz)));
+          gl_Position = projectionMatrix*mv; }`,
+      fragmentShader:`uniform float time, strength; uniform vec3 hot, cool; varying vec2 vUv; varying float vF;
+        float h(float x){ return fract(sin(x*127.1)*43758.5453); }
+        float n1(float x){ float i = floor(x), f = fract(x); return mix(h(i), h(i + 1.), f*f*(3. - 2.*f)); }
+        void main(){ float v = vUv.y;
+          float a = pow(1. - v, 1.6)*pow(vF, 1.5)*(.85 + .15*n1(v*8. - time*20.))*strength;
+          gl_FragColor = vec4(mix(hot, cool, v)*a, a); }`});
+  }
+  function setTriplanar(on){
+    if(!_rockMats) return;
+    for(const m of _rockMats){
+      const has = 'TRIPLANAR' in m.defines;
+      if(on === has) continue;
+      if(on) m.defines.TRIPLANAR = ''; else delete m.defines.TRIPLANAR;
+      m.needsUpdate = true;
+    }
+  }
+  // 同一マテリアル前提の静的ジオメトリ結合(draw call削減, CPT-06)
+  function mergeGeo(parts){
+    const geos = parts.map(({g, p=[0,0,0], r=[0,0,0]})=>{
+      const o = new THREE.Object3D();
+      o.position.set(...p); o.rotation.set(...r);
+      o.updateMatrix();
+      return g.toNonIndexed().applyMatrix4(o.matrix);
+    });
+    let total = 0; geos.forEach(g=>total += g.attributes.position.count);
+    const pos = new Float32Array(total*3), nor = new Float32Array(total*3);
+    let off = 0;
+    for(const g of geos){
+      pos.set(g.attributes.position.array, off*3);
+      nor.set(g.attributes.normal.array, off*3);
+      off += g.attributes.position.count;
+      g.dispose();
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    return out;
+  }
+
+  let _rockGeos = null, _rockMats = null, _coreShared = null;
+  function rockGeos(){
+    if(!_rockGeos){
+      _rockGeos = [];
+      for(let g = 0; g < 8; g++)
+        _rockGeos.push(deformRock(new THREE.IcosahedronGeometry(1, IS_TOUCH ? 2 : 3), 1000 + g*77));
+    }
+    return _rockGeos;
+  }
+  // SPEC-09a F1-01/02: 方向別半径テーブル(RadialHull)。岩は中心から放射状に変形した星形なので
+  // 表面は方向の関数 r(dir)。立方体マップの格子点(6面×17×17)で中心からのレイ交差距離を厳密に前計算し、双線形補間で引く
+  const HULL_N = 17;
+  function rayFromCenter(pos, d){   // 原点からの半直線と全三角形の交差距離の最大値(Möller–Trumbore)
+    const a = pos; let best = 0;
+    for(let i = 0; i < a.length; i += 9){
+      const ax = a[i], ay = a[i+1], az = a[i+2];
+      const e1x = a[i+3]-ax, e1y = a[i+4]-ay, e1z = a[i+5]-az, e2x = a[i+6]-ax, e2y = a[i+7]-ay, e2z = a[i+8]-az;
+      const px = d.y*e2z - d.z*e2y, py = d.z*e2x - d.x*e2z, pz = d.x*e2y - d.y*e2x;
+      const det = e1x*px + e1y*py + e1z*pz;
+      if(Math.abs(det) < 1e-9) continue;
+      const inv = 1/det, tx = -ax, ty = -ay, tz = -az;
+      const u = (tx*px + ty*py + tz*pz)*inv;
+      if(u < -1e-6 || u > 1 + 1e-6) continue;
+      const qx = ty*e1z - tz*e1y, qy = tz*e1x - tx*e1z, qz = tx*e1y - ty*e1x;
+      const v = (d.x*qx + d.y*qy + d.z*qz)*inv;
+      if(v < -1e-6 || u + v > 1 + 1e-6) continue;
+      const tt = (e2x*qx + e2y*qy + e2z*qz)*inv;
+      if(tt > best) best = tt;
+    }
+    return best;
+  }
+  // 方向 → (面, u, v)。u,v∈[-1,1]
+  function cubeFace(x, y, z){
+    const ax = Math.abs(x), ay = Math.abs(y), az = Math.abs(z);
+    if(ax >= ay && ax >= az) return [x > 0 ? 0 : 1, y/ax, z/ax];
+    if(ay >= az)             return [y > 0 ? 2 : 3, x/ay, z/ay];
+    return                          [z > 0 ? 4 : 5, x/az, y/az];
+  }
+  function faceDir(f, u, v, out){
+    if(f < 2) out.set(f === 0 ? 1 : -1, u, v);
+    else if(f < 4) out.set(u, f === 2 ? 1 : -1, v);
+    else out.set(u, v, f === 4 ? 1 : -1);
+    return out.normalize();
+  }
+  function rockHull(geo){
+    if(geo.userData.hull) return geo.userData.hull;
+    const src = geo.index ? geo.toNonIndexed() : geo;
+    const pos = src.attributes.position.array, N = HULL_N, tab = new Float32Array(6*N*N), d = new THREE.Vector3();
+    for(let f = 0; f < 6; f++) for(let j = 0; j < N; j++) for(let i = 0; i < N; i++){
+      faceDir(f, -1 + 2*i/(N-1), -1 + 2*j/(N-1), d);
+      tab[(f*N + j)*N + i] = rayFromCenter(pos, d);
+    }
+    let max = 0;
+    const p = geo.attributes.position, v = new THREE.Vector3();
+    for(let i = 0; i < p.count; i++) max = Math.max(max, v.fromBufferAttribute(p, i).length());
+    const hull = {max, tab,
+      radiusAt(dir){   // dir: 岩ローカルの方向(正規化不要)
+        const [f, u, w] = cubeFace(dir.x, dir.y, dir.z);
+        const fu = (u + 1)*.5*(N-1), fw = (w + 1)*.5*(N-1);
+        const i0 = Math.min(N-2, Math.floor(fu)), j0 = Math.min(N-2, Math.floor(fw)), a = fu - i0, b = fw - j0;
+        const o = f*N*N;
+        return (tab[o + j0*N + i0]*(1-a) + tab[o + j0*N + i0+1]*a)*(1-b)
+             + (tab[o + (j0+1)*N + i0]*(1-a) + tab[o + (j0+1)*N + i0+1]*a)*b;
+      }};
+    geo.userData.hull = hull;
+    return hull;
+  }
+  // SPEC-09a F1-03: 機体を4球で近似(buildShipの形状: 機首Cone(1.3,5.2)を-z向き / 主翼Box(7.5,.3,2.4) at (0,-.4,1.2))
+  const SHIP_SPHERES = [
+    {name:'nose',  c:[0, 0, -1.8],    r:.85},
+    {name:'body',  c:[0, -.1, .9],    r:1.35},
+    {name:'wingL', c:[-2.6, -.4, 1.2], r:1.15},
+    {name:'wingR', c:[ 2.6, -.4, 1.2], r:1.15}];
+  const HIT_LENIENCY = .9;   // F1-04: 機体球の半径に乗算(見た目より少し甘く)
+  function shipSpheresWorld(ship, out){
+    ship.updateMatrixWorld();
+    out = out || SHIP_SPHERES.map(S=>({name:S.name, c:new THREE.Vector3(), r:S.r}));
+    SHIP_SPHERES.forEach((S, i)=>out[i].c.set(S.c[0], S.c[1], S.c[2]).applyMatrix4(ship.matrixWorld));
+    return out;
+  }
+  // SPEC-09a F1-04/05/07: 岩表面と機体球のすき間(負=接触の深さ)。
+  // sd: このフレームの岩の移動量(+z)。移動線分上の最接近点で測る(トンネリング防止)
+  const _q = new THREE.Vector3(), _d = new THREE.Vector3(), _iq = new THREE.Quaternion();
+  function clearance(rock, sph, sd = 0){
+    const hull = rock.geometry.userData.hull || rockHull(rock.geometry), s = rock.userData.r, p = rock.position;
+    let best = Infinity, inv = false;
+    for(const S of sph){
+      let k = 1;
+      if(sd > 0) k = Math.min(1, Math.max(0, (S.c.z - (p.z - sd))/sd));
+      _q.set(p.x, p.y, p.z - sd + sd*k);
+      _d.subVectors(S.c, _q);
+      const dist = _d.length(), rs = S.r*HIT_LENIENCY;
+      const coarse = dist - hull.max*s - rs;
+      if(coarse > 0){ if(coarse < best) best = coarse; continue; }
+      if(!inv){ _iq.copy(rock.quaternion).invert(); inv = true; }
+      _d.applyQuaternion(_iq);
+      const c = dist - hull.radiusAt(_d)*s - rs;
+      if(c < best) best = c;
+    }
+    return best;
+  }
+  // SPEC-09d: 岩種 C型(暗灰)/S型(褐色)/M型(金属質) — 実在の小惑星の反射率帯に寄せた色
+  const ROCK_TYPES = [{type:'C', color:0x8a847d, roughness:.92, metalness:.03},
+                      {type:'S', color:0x96806c, roughness:.88, metalness:.03},
+                      {type:'M', color:0x7a8390, roughness:.55, metalness:.35}];
+  function rockMats(){
+    if(!_rockMats){
+      const S = rockSurface(IS_TOUCH ? 256 : 512, 20260923);
+      const tex = (cv, srgb)=>{ const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        if(srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
+      const map = tex(S.albedo, true), nrm = tex(S.normal, false), rgh = tex(S.rough, false);
+      _rockMats = ROCK_TYPES.map(T=>{
+        const m = triplanar(new THREE.MeshStandardMaterial({color:T.color, map, normalMap:nrm,
+          normalScale:new THREE.Vector2(1.1, 1.1), roughnessMap:rgh, roughness:T.roughness, metalness:T.metalness, envMapIntensity:.5}));
+        m.userData.type = T.type;
+        return m;
+      });
+    }
+    return _rockMats;
+  }
+  // エネルギーコア(内核+halo+二重リング) — SPEC-05 COR仕様と同一
+  function buildCore(){
+    if(!_coreShared) _coreShared = {
+      geo: new THREE.OctahedronGeometry(1.6),
+      ringA: new THREE.TorusGeometry(2.4, .09, 6, 24),
+      ringB: new THREE.TorusGeometry(3.0, .055, 6, 24),
+      matA: new THREE.MeshBasicMaterial({color:hdr(0x00f0ff, 2.2), transparent:true, opacity:.7, blending:THREE.AdditiveBlending, depthWrite:false}),
+      matB: new THREE.MeshBasicMaterial({color:hdr(0xbffcff, 2.2), transparent:true, opacity:.45, blending:THREE.AdditiveBlending, depthWrite:false})};
+    const m = new THREE.Mesh(_coreShared.geo,
+      new THREE.MeshBasicMaterial({color:hdr(0x00f0ff, 2.2), transparent:true, opacity:.95, blending:THREE.AdditiveBlending}));
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x00f0ff, blending:THREE.AdditiveBlending, depthWrite:false}));
+    halo.scale.set(9, 9, 1);
+    const ring1 = new THREE.Mesh(_coreShared.ringA, _coreShared.matA); ring1.rotation.x = .5;
+    const ring2 = new THREE.Mesh(_coreShared.ringB, _coreShared.matB); ring2.rotation.z = .9;
+    m.add(halo, ring1, ring2);
+    m.userData.ring1 = ring1; m.userData.ring2 = ring2;
+    return m;
+  }
+  // 機体一式(SPEC-05 SHP仕様と同一)。partsは装飾更新用の参照
+  function buildShip(){
+    // SPEC-09b F2-07: 外板の emissive は通常 0(明るさは主光と映り込みで得る)。F6: パネルの法線/粗さで金属の映り込みを出す
+    const ht = hullTextures();
+    const hull = new THREE.MeshStandardMaterial({color:0xc4ccd8, metalness:.86, roughness:.34,
+      normalMap:ht.normal, roughnessMap:ht.rough, envMapIntensity:1.1});
+    const group = new THREE.Group();
+    const nose = new THREE.Mesh(boxUV(new THREE.ConeGeometry(1.3, 5.2, 4)), hull);
+    nose.rotation.x = -Math.PI/2;
+    const wing = new THREE.Mesh(boxUV(new THREE.BoxGeometry(7.5, .3, 2.4)), hull);
+    wing.position.set(0, -.4, 1.2);
+    const fin = new THREE.Mesh(boxUV(new THREE.BoxGeometry(.3, 2.4, 1.8)), hull);
+    fin.position.set(0, .9, 1.6);
+    // F6-05: エンジン光は小さく芯だけ(HDR)に。発光の広がりはプルームが担う
+    const eng = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:hdr(0x00f0ff, 1.6), blending:THREE.AdditiveBlending, depthWrite:false}));
+    eng.scale.set(2, 2, 1); eng.position.set(0, 0, 3.2);
+    group.add(nose, wing, fin, eng);
+    const nozzles = new THREE.Mesh(boxUV(mergeGeo([
+      {g:new THREE.CylinderGeometry(.42, .58, 1.3, 12), p:[-1.6, -.15, 2.6], r:[Math.PI/2, 0, 0]},
+      {g:new THREE.CylinderGeometry(.42, .58, 1.3, 12), p:[ 1.6, -.15, 2.6], r:[Math.PI/2, 0, 0]},
+    ])), hull);
+    const nozzleGlow = new THREE.Mesh(mergeGeo([
+      {g:new THREE.CircleGeometry(.34, 14), p:[-1.6, -.15, 3.28]},
+      {g:new THREE.CircleGeometry(.34, 14), p:[ 1.6, -.15, 3.28]},
+    ]), new THREE.MeshBasicMaterial({color:hdr(0x7df1ff, 1.8), transparent:true, opacity:.9,
+      blending:THREE.AdditiveBlending, depthWrite:false}));
+    // F6-03: 排気は球状スプライト → プルーム(scale.y が長さ。既存の速度連動・Sortie のコードはそのまま動く)
+    const plumeMat = plumeMaterial();
+    const ex1 = new THREE.Mesh(_plumeGeo, plumeMat), ex2 = new THREE.Mesh(_plumeGeo, plumeMat);
+    ex1.rotation.x = ex2.rotation.x = Math.PI/2;   // +y(長さ) を機体後方 +z へ
+    ex1.position.set(-1.6, -.15, 3.3); ex2.position.set(1.6, -.15, 3.3);
+    const tipL = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:hdr(0xff4455, 1.5),
+      transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false}));
+    const tipR = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:hdr(0x55ff88, 1.5),
+      transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false}));
+    tipL.position.set(-3.75, -.4, 1.2); tipR.position.set(3.75, -.4, 1.2);
+    tipL.scale.setScalar(1.1); tipR.scale.setScalar(1.1);
+    group.add(nozzles, nozzleGlow, ex1, ex2, tipL, tipR);
+    return {group, parts:{nozzles, nozzleGlow, exhaust:[ex1, ex2], tips:[tipL, tipR], hull, plumeMat}};
+  }
+  return {deformRock, makeRockTex, mergeGeo, rockGeos, rockMats, buildCore, buildShip,
+          rockSurface, setTriplanar, ROCK_TYPES,
+          rockHull, SHIP_SPHERES, HIT_LENIENCY, shipSpheresWorld, clearance};
+})();
+return {Assets, Look, starTex};
+})();
+
+// ===== 共通: 決定的な配置 =====
+let seed = 7; const rnd = ()=>((seed = (seed*1664525 + 1013904223)>>>0)/4294967296);
+const LAYOUT = [{x:-9, y:2.5, z:-26, s:6.2, g:5}, {x:11, y:-4, z:-44, s:5.2, g:2}, {x:-3, y:7, z:-74, s:7.5, g:1}, {x:6, y:3, z:-18, s:2.2, g:3}];
+for(let i = 0; i < 34; i++) LAYOUT.push({x:(rnd()-.5)*110, y:(rnd()-.5)*80, z:-60 - rnd()*820, s:2 + rnd()*6, g:i%8});
+const SPINS = LAYOUT.map(()=>({x:(rnd()-.5)*.5, y:(rnd()-.5)*.5, z:(rnd()-.5)*.4}));
+function makeStars(){
+  const n = 3000, p = new Float32Array(n*3);
+  for(let i = 0; i < n; i++){ const u = rnd()*2 - 1, a = rnd()*6.283, r = 900, q = Math.sqrt(1 - u*u);
+    p[i*3] = Math.cos(a)*q*r; p[i*3+1] = u*r; p[i*3+2] = Math.sin(a)*q*r; }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  return new THREE.Points(g, new THREE.PointsMaterial({size:1.4, color:0xcfe4ff, sizeAttenuation:false, fog:false, transparent:true, opacity:.8}));
+}
+
+// ===== BEFORE の世界(当時の本番と同じ照明・合成) =====
+function buildBefore(R){
+  const A = Old.Assets, S = new THREE.Scene();
+  S.background = new THREE.Color(0x020010); S.fog = new THREE.FogExp2(0x020010, .0035);
+  S.add(makeStars());
+  S.add(new THREE.AmbientLight(0x445577, 2));
+  const key = new THREE.DirectionalLight(0xaaccff, 2.4); key.position.set(40, 60, 30); S.add(key);
+  const sb = A.buildShip(); S.add(sb.group);
+  const geos = A.rockGeos(), mats = A.rockMats();
+  const rocks = LAYOUT.map((L, i)=>{ const m = new THREE.Mesh(geos[L.g], mats[i%3]); m.position.set(L.x, L.y, L.z); m.scale.setScalar(L.s); S.add(m); return m; });
+  const core = A.buildCore(); core.position.set(3.5, 1.2, -36); S.add(core);
+  const pl = new THREE.Mesh(new THREE.SphereGeometry(140, 28, 22), new THREE.MeshStandardMaterial({color:0x5b46c8, emissive:0x180f40, roughness:.85, metalness:.1, fog:false}));
+  pl.position.set(-270, -70, -1370); S.add(pl);
+  const hl = new THREE.SpotLight(0xcce9ff, 420, 165, .58, .8, 1.5), hlT = new THREE.Object3D();
+  hl.position.set(0, .4, -7); hlT.position.set(0, 0, -95); hl.target = hlT; S.add(hl, hlT);
+  const comp = new EffectComposer(R);
+  comp.addPass(new RenderPass(S, cam));
+  comp.addPass(new UnrealBloomPass(new THREE.Vector2(512, 512), .85, .6, .62));
+  // 当時の最終出力(AfterimagePass の MeshBasic コピー)と同じ sRGB 化のみ
+  comp.addPass(new ShaderPass({uniforms:{tDiffuse:{value:null}},
+    vertexShader:`varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+    fragmentShader:`uniform sampler2D tDiffuse; varying vec2 vUv;
+      vec3 s(vec3 c){ return mix(c*12.92, 1.055*pow(c, vec3(1./2.4)) - .055, step(.0031308, c)); }
+      void main(){ gl_FragColor = vec4(s(clamp(texture2D(tDiffuse, vUv).rgb, 0., 1.)), 1.); }`}));
+  return {S, comp, ship: sb.group, parts: sb.parts, rocks, core};
+}
+
+// ===== AFTER の世界(本番と同じ Look・材質・合成) =====
+function buildAfter(R){
+  const A = New.Assets, L = New.Look, S = new THREE.Scene();
+  S.background = new THREE.Color(L.LOOK.fog); S.fog = new THREE.FogExp2(L.LOOK.fog, .0026);
+  S.add(makeStars());
+  const rig = L.rig(S); S.environment = L.spaceEnv(R);
+  R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap;
+  rig.key.castShadow = true; rig.key.shadow.mapSize.set(1024, 1024); rig.key.shadow.bias = -.0004; rig.key.shadow.normalBias = .03;
+  Object.assign(rig.key.shadow.camera, {left:-45, right:45, top:45, bottom:-45, near:1, far:260});
+  rig.key.position.copy(L.LOOK.keyDir).normalize().multiplyScalar(120);
+  const sb = A.buildShip(); S.add(sb.group);
+  sb.group.traverse(o=>{ if(o.isMesh && !o.material.transparent){ o.castShadow = true; o.receiveShadow = true; } });
+  const geos = A.rockGeos(), mats = A.rockMats();
+  const rocks = LAYOUT.map((Lr, i)=>{ const m = new THREE.Mesh(geos[Lr.g], mats[i%3]); m.position.set(Lr.x, Lr.y, Lr.z); m.scale.setScalar(Lr.s);
+    m.receiveShadow = true; m.castShadow = i < 8; S.add(m); return m; });
+  const core = A.buildCore(); core.position.set(3.5, 1.2, -36); S.add(core);
+  const pl = new THREE.Mesh(new THREE.SphereGeometry(140, 48, 32), new THREE.MeshStandardMaterial({color:0x5b46c8, roughness:.9, metalness:0, envMapIntensity:.2, fog:false}));
+  pl.position.set(-270, -70, -1370); S.add(pl);
+  const atmo = new THREE.Mesh(new THREE.SphereGeometry(149, 48, 32), new THREE.ShaderMaterial({transparent:true, blending:THREE.AdditiveBlending, side:THREE.BackSide, depthWrite:false, fog:false,
+    vertexShader:`varying vec3 n; varying vec3 v; void main(){ n = normalize(normalMatrix*normal); vec4 mv = modelViewMatrix*vec4(position,1.); v = normalize(-mv.xyz); gl_Position = projectionMatrix*mv; }`,
+    fragmentShader:`varying vec3 n; varying vec3 v; void main(){ float f = pow(1. - abs(dot(n, v)), 3.); gl_FragColor = vec4(vec3(.55,.45,1.)*f*1.4, f); }`}));
+  atmo.position.copy(pl.position); S.add(atmo);
+  const hl = new THREE.SpotLight(0xcce9ff, 420, 165, .58, .8, 1.5), hlT = new THREE.Object3D();
+  hl.position.set(0, .4, -7); hlT.position.set(0, 0, -95); hl.target = hlT; S.add(hl, hlT);
+  const comp = new EffectComposer(R);
+  comp.addPass(new RenderPass(S, cam));
+  comp.addPass(new UnrealBloomPass(new THREE.Vector2(512, 512), .45, .3, 1.0));
+  const grade = new ShaderPass(L.GradeShader); grade.uniforms.encode.value = 1;   // ACES+仕上げ+sRGB(サイトPCと同じ最終パス)
+  comp.addPass(grade);
+  return {S, comp, ship: sb.group, parts: sb.parts, rocks, core, grade};
+}
+
+const cam = new THREE.PerspectiveCamera(72, 1, .1, 1500);
+function makePane(id, build){
+  const R = new THREE.WebGLRenderer({canvas: document.getElementById(id), antialias:true});
+  R.setPixelRatio(Math.min(devicePixelRatio, 2));
+  return {R, W: build(R)};
+}
+const A = makePane('ca', buildBefore), B = makePane('cb', buildAfter);
+window.BEFORE_AFTER = {A, B, cam, THREE};
+
+let view = 'split', camMode = 'chase', paused = false, t = 0;
+function resize(){
+  const w = view === 'split' ? innerWidth/2 : innerWidth, h = innerHeight;
+  for(const p of [A, B]){ p.R.setSize(w, h, false); p.W.comp.setSize(w, h); }
+  cam.aspect = w/h; cam.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+document.querySelectorAll('[data-v]').forEach(b=>b.onclick = ()=>{ view = b.dataset.v;
+  document.body.className = view === 'split' ? '' : 'only-' + view;
+  document.querySelectorAll('[data-v]').forEach(x=>x.classList.toggle('on', x === b)); resize(); });
+document.querySelectorAll('[data-cam]').forEach(b=>b.onclick = ()=>{ camMode = b.dataset.cam;
+  document.querySelectorAll('[data-cam]').forEach(x=>x.classList.toggle('on', x === b)); });
+document.getElementById('pause').onclick = e=>{ paused = !paused; e.target.textContent = paused ? '再生' : '一時停止'; };
+
+function step(tt){
+  for(const p of [A, B]){ const W = p.W;
+    W.ship.position.set(Math.sin(tt*.6)*2.2, Math.sin(tt*.9)*.8, 0);
+    W.ship.rotation.z = -Math.cos(tt*.6)*.35; W.ship.rotation.x = Math.cos(tt*.9)*.06;
+    W.rocks.forEach((m, i)=>{ const s = SPINS[i]; m.rotation.set(i*.7 + tt*s.x, i*1.3 + tt*s.y, i*.4 + tt*s.z); });
+    W.core.userData.ring1.rotation.y = tt*1.8; W.core.userData.ring2.rotation.x = -tt*1.2;
+    const k = .35 + .25*Math.sin(tt*.4);
+    W.parts.exhaust.forEach(e=>e.scale.set(.9 + .6*k, 1.6 + 3.2*k, 1));
+    if(W.parts.plumeMat){ W.parts.plumeMat.uniforms.time.value = tt; W.parts.plumeMat.uniforms.strength.value = .45 + .55*k; }
+    if(W.grade) W.grade.uniforms.time.value = tt;
+  }
+  if(camMode === 'chase'){ cam.position.set(Math.sin(tt*.6)*2.2*.9, 4 + Math.sin(tt*.9)*.3, 17); cam.lookAt(0, 0, -60); }
+  else if(camMode === 'close'){ const r0 = LAYOUT[0]; cam.position.set(r0.x + 13*Math.cos(tt*.25), r0.y + 4, r0.z + 13*Math.sin(tt*.25) + 4); cam.lookAt(r0.x, r0.y, r0.z); }
+  else { cam.position.set(6*Math.cos(tt*.3), 2.5, 6*Math.sin(tt*.3) + 1); cam.lookAt(0, 0, .5); }
+}
+window.BEFORE_AFTER.step = step;
+let last = performance.now();
+function loop(now){
+  requestAnimationFrame(loop);
+  const dt = Math.min(.05, (now - last)/1000); last = now;
+  if(!paused) t += dt;
+  step(t);
+  if(view !== 'b') A.W.comp.render();
+  if(view !== 'a') B.W.comp.render();
+}
+resize(); requestAnimationFrame(loop);
+</script>
+</body>
+</html>

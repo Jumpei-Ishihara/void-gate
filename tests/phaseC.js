@@ -24,7 +24,8 @@
   // ---- LAUNCH DECK(C-04) ----
   localStorage.setItem('vg-ast-best', '12345');
   V.closeLayer();   // renderBest再実行経路
-  t('C-04 ベスト表示', document.getElementById('best-ast').textContent === '12,345',
+  // SPEC-09g改訂(F7-02): 最高称号がある場合は「12,345 · ACE」のように併記される
+  t('C-04 ベスト表示', /^12,345( · (CADET|PILOT|ACE|VOID RUNNER))?$/.test(document.getElementById('best-ast').textContent),
     document.getElementById('best-ast').textContent);
   const qr = document.getElementById('quickref');
   t('C-04b 早見表1枚', qr.querySelectorAll('.card').length === 1 && qr.querySelectorAll('table').length === 1);

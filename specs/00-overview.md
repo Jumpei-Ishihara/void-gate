@@ -30,6 +30,14 @@
 | 08a | └ E1: SIGNAL撤去＋テスト/文書改訂 | 6-E1 | Verified |
 | 08b | └ E2: Sortie連続機体＋タイムワープ＋フリーズ3章 | 6-E2 | Verified |
 | 08c | └ E3: 射出/帰投/CLEARANCE・最終化 | 6-E3 | Verified |
+| 09 | リアル質感 × ゲーム品質向上（方針書・[実装計画](09-implementation-plan.md)） | 7 | Verified |
+| 09a | └ F1: 当たり判定の正確化（RadialHull＋機体4球） | 7-F1 | Verified |
+| 09b | └ F2: 照明・ACES・環境反射（CON-05: レティクルはトーンマップ後に合成） | 7-F2 | Verified |
+| 09c | └ F3: パターンスポナー・公平性検証・セクター制 | 7-F3 | Verified |
+| 09d | └ F4: 岩マテリアル（法線/粗さ/トライプラナー/岩種/影） | 7-F4 | Verified |
+| 09e | └ F5: スコア体系（ニアミス/コンボ/撃破）と手応え | 7-F5 | Verified |
+| 09f | └ F6: 機体外板・排気プルーム・惑星大気・近傍ダスト・仕上げ | 7-F6 | Verified |
+| 09g | └ F7: 称号・デイリー・履歴・共有・文書整合 | 7-F7 | Verified |
 
 ## 1. 共通制約（全SPECに適用）
 

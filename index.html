@@ -60,7 +60,7 @@
       "name": "ASTEROID RUN",
       "url": "https://jumpei-ishihara.github.io/void-gate/",
       "image": "https://jumpei-ishihara.github.io/void-gate/assets/og.png",
-      "description": "小惑星帯を回避飛行しながらエネルギーコアを回収する3D飛行ゲーム。コックピット視点と追跡視点を切替可能。",
+      "description": "小惑星帯を回避飛行しながらエネルギーコアを回収する3D飛行ゲーム。40秒ごとに局面が変わるセクター制、岩肌すれすれのニアミスとコンボ倍率のスコア体系、毎日同じコースを遊べるデイリーモード。コックピット視点と追跡視点を切替可能。",
       "inLanguage": "ja",
       "genre": ["Action", "Shooter"],
       "playMode": "SinglePlayer",
@@ -361,6 +361,16 @@ body.no-cursor #cursor{
 #g-warn.right{right:0;background:linear-gradient(270deg,rgba(255,46,196,.45),transparent)}
 #g-warn.show{animation:gwarn 1.5s steps(1) forwards}
 @keyframes gwarn{0%,33%,66%{opacity:1}16%,50%,83%{opacity:.15}100%{opacity:0}}
+/* SPEC-09g: 称号・履歴 */
+.grank{font-family:'Orbitron',sans-serif;font-size:12px;letter-spacing:.3em;color:var(--dim);margin:-18px 0 18px}
+.grank b{color:#fff;letter-spacing:.2em;text-shadow:0 0 12px var(--magenta);margin-left:8px}
+.grank small{display:block;margin-top:6px;font-size:10px;letter-spacing:.14em}
+.ghist{margin:0 auto 22px;min-width:min(420px,86vw);text-align:left}
+.ghist-h{font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:.3em;color:var(--dim);margin-bottom:6px}
+.ghist ol{list-style:none;margin:0;padding:0;font-size:11px}
+.ghist li{display:grid;grid-template-columns:1.2fr 1.3fr .9fr 1.1fr;gap:8px;padding:3px 8px;border-bottom:1px solid rgba(255,255,255,.06);color:var(--text)}
+.ghist li span:first-child{font-family:'Orbitron',sans-serif;color:#fff}
+@media(max-height:560px){ .grank{margin:-8px 0 10px} .ghist{margin-bottom:12px} .gbreak{margin-bottom:10px} }
 /* SPEC-09e: 結果画面の内訳 */
 .gbreak{margin:0 auto 18px;border-collapse:collapse;font-size:12px;letter-spacing:.08em;min-width:min(420px,86vw)}
 .gbreak td{padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.07);color:var(--text);text-align:left}
@@ -650,6 +660,13 @@ const camera = new THREE.PerspectiveCamera(62, innerWidth/innerHeight, 0.1, 1200
 camera.position.set(0, 0, 80);
 
 const IS_TOUCH = matchMedia('(hover:none)').matches || 'ontouchstart' in window;
+// SPEC-09g F7: 端末内記録の読み書きは例外を握りつぶす(プライベートモード等で localStorage が使えなくても遊べる)
+const LS = {
+  get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
+  set(k, v){ try{ localStorage.setItem(k, v); }catch(e){} },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){} },
+  keys(){ try{ return Object.keys(localStorage); }catch(e){ return []; } }
+};
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // SPEC-07a: ページ側合成(PCのみ軽量ブルーム。フレーム予算超過で自動OFF)
@@ -1104,7 +1121,7 @@ const gameOverlay = document.getElementById('game-overlay');
 const gameCv = document.getElementById('game-canvas');
 let activeGame = null;
 let gpaused = false;   // SP縦持ち中はゲームを一時停止(横画面ガイド表示)
-let wantFS = localStorage.getItem('vg-fullscreen') !== '0';   // フルスクリーン設定(デフォルトON)
+let wantFS = LS.get('vg-fullscreen') !== '0';   // フルスクリーン設定(デフォルトON)
 
 // モード選択画面のチェックボックスを読み取り、ONならフルスクリーン化(SPはさらに横画面固定を試行)
 // LAUNCHのクリック(ユーザー操作)起点で呼ぶこと。iPhone SafariなどAPI非対応環境は通常表示で続行
@@ -1112,7 +1129,7 @@ function applyFSChoice(){
   SoundEngine.ensure();          // ユーザー操作起点でAudioContext解禁(AUD-02)
   SoundEngine.ui('select');
   const cb = gameOverlay.querySelector('#g-fs');
-  if(cb){ wantFS = cb.checked; localStorage.setItem('vg-fullscreen', wantFS ? '1' : '0'); }
+  if(cb){ wantFS = cb.checked; LS.set('vg-fullscreen', wantFS ? '1' : '0'); }
   if(!wantFS) return;
   const de = document.documentElement;
   const fsReq = de.requestFullscreen || de.webkitRequestFullscreen;
@@ -1171,7 +1188,7 @@ function lockButtons(){
 /* ================= サウンドエンジン(SPEC-01) — 全音Web Audio合成 ================= */
 const SoundEngine = (()=>{
   let ctx = null, master = null, noiseBuf = null, engine = null;
-  let muted = localStorage.getItem('vg-mute') === '1';
+  let muted = LS.get('vg-mute') === '1';
   const voices = new Set();          // 再生中SFX(上限8, AUD-12)
   const test = {lastSfx: null, intensity: 0};
 
@@ -1353,7 +1370,7 @@ const SoundEngine = (()=>{
   }
   function setMute(m){
     muted = !!m;
-    localStorage.setItem('vg-mute', muted ? '1' : '0');
+    LS.set('vg-mute', muted ? '1' : '0');
     if(master) master.gain.value = muted ? 0 : 1;
   }
   function toggleMute(){ setMute(!muted); }
@@ -1984,7 +2001,7 @@ const Spawner = (()=>{
   // ===== ディレクター: 時間・セクター・生成カーソル・アイテム位置の唯一の管理者(ゲームはメッシュに写すだけ) =====
   function director(seed){
     const sp = create(seed);
-    const d = {t:0, sector: sectorAt(0), cursor:0, breather:0, items:[], log:[], warns:[], lastEndZ:null, nextId:1};
+    const d = {seed, t:0, sector: sectorAt(0), cursor:0, breather:0, items:[], log:[], warns:[], lastEndZ:null, nextId:1};
     function place(p, zStart, speed){
       let nr = d.items.filter(i=>i.kind === 'rock').length, nc = d.items.length - nr, truncated = 0;
       const placed = [];
@@ -2052,6 +2069,57 @@ const Spawner = (()=>{
           rng, SECTORS, sectorAt, fogFor, PATTERNS, make, validate, generate, create, director};
 })();
 
+/* ---------- SPEC-09g: 継続動機(称号・デイリーシード・戦績履歴・共有文面) ---------- */
+const Meta = (()=>{
+  const RANKS = [[5, 'VOID RUNNER'], [4, 'ACE'], [2, 'PILOT'], [1, 'CADET']];
+  const ORDER = ['CADET', 'PILOT', 'ACE', 'VOID RUNNER'];
+  const rankOf = sector=>RANKS.find(([n])=>sector >= n)[1];
+  const pad = n=>String(n).padStart(2, '0');
+  const dateLabel = d=>`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  function dailySeed(d = new Date()){   // 端末のローカル日付の FNV-1a ハッシュ(同じ日付なら全員同じ配置)
+    const label = dateLabel(d);
+    let h = 2166136261;
+    for(const ch of label){ h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+    return {seed: h >>> 0, label};
+  }
+  const dailyKey = label=>'vg-ast-daily-' + label.replace(/-/g, '');
+  function cleanupDaily(now = new Date()){   // 7日より古い日付別ベストを削除
+    const limit = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+    for(const k of LS.keys()){
+      const m = /^vg-ast-daily-(\d{4})(\d{2})(\d{2})$/.exec(k);
+      if(m && new Date(+m[1], +m[2] - 1, +m[3]) < limit) LS.del(k);
+    }
+  }
+  function history(){ try{ return JSON.parse(LS.get('vg-ast-hist') || '[]'); }catch(e){ return []; } }
+  // 結果を保存し、{rank, best, bestRank, dailyBest, hist} を返す
+  function saveResult(r){
+    const rank = rankOf(r.sector);
+    const best = Math.max(r.score, +(LS.get('vg-ast-best') || 0));
+    LS.set('vg-ast-best', best);
+    const prevRank = LS.get('vg-ast-rank');
+    const bestRank = ORDER.indexOf(rank) > ORDER.indexOf(prevRank) ? rank : (prevRank || rank);
+    LS.set('vg-ast-rank', bestRank);
+    let dailyBest = null;
+    if(r.course === 'daily' && r.label){
+      dailyBest = Math.max(r.score, +(LS.get(dailyKey(r.label)) || 0));
+      LS.set(dailyKey(r.label), dailyBest);
+    }
+    const hist = history();
+    hist.push({score: r.score, rank, sector: r.sector, date: dateLabel(new Date()), course: r.course || 'random'});
+    hist.sort((a, b)=>b.score - a.score);
+    hist.length = Math.min(hist.length, 5);
+    LS.set('vg-ast-hist', JSON.stringify(hist));
+    return {rank, best, bestRank, dailyBest, hist};
+  }
+  const URL = 'https://jumpei-ishihara.github.io/void-gate/';
+  function shareText(r){
+    return `VOID GATE // ASTEROID RUN — SCORE ${r.score.toLocaleString()} / SECTOR ${pad(r.sector)} / ${rankOf(r.sector)}` +
+      (r.course === 'daily' && r.label ? ` (DAILY ${r.label})` : '') + ` ${URL} #VOIDGATE`;
+  }
+  return {RANKS, rankOf, dailySeed, dailyKey, cleanupDaily, history, saveResult, shareText};
+})();
+Meta.cleanupDaily();
+
 /* ---------- GAME 1: ASTEROID RUN(探査開始) ---------- */
 const AsteroidRun = (()=>{
   let R, S, C, ship, dust;
@@ -2073,6 +2141,7 @@ const AsteroidRun = (()=>{
 
   const asts = [], cores = [];
   let director = null;   // SPEC-09c
+  let course = 'random', lastResult = null;   // SPEC-09g: コース(RANDOM/DAILY)と直近の結果(共有用)
   let raf = 0, playing = false, last = 0, frame = 0, st = null;
   const mt = {x:0, y:0};
   const sm = {x:0, y:0, roll:0, pitch:0, fov:72};   // 慣性付きカメラ状態
@@ -2845,10 +2914,18 @@ const AsteroidRun = (()=>{
           <div class="planet-chip vchip${view === 'cockpit' ? ' active' : ''}" data-v="cockpit">COCKPIT // 操縦席視点</div>
           <div class="planet-chip vchip${view === 'chase' ? ' active' : ''}" data-v="chase">CHASE // 追跡視点</div>
         </div>
+        <div class="gview-pick">
+          <div class="planet-chip cchip${course === 'random' ? ' active' : ''}" data-c="random">RANDOM // 通常</div>
+          <div class="planet-chip cchip${course === 'daily' ? ' active' : ''}" data-c="daily">DAILY // 本日のコース</div>
+        </div>
         <label class="gfs"><input type="checkbox" id="g-fs"${wantFS ? ' checked' : ''}><span>フルスクリーンでプレイ</span></label>
-        ${IS_TOUCH ? `<label class="gfs"><input type="checkbox" id="g-vibe"${localStorage.getItem('vg-vibe') !== '0' ? ' checked' : ''}><span>被弾時に振動</span></label>` : ''}
+        ${IS_TOUCH ? `<label class="gfs"><input type="checkbox" id="g-vibe"${LS.get('vg-vibe') !== '0' ? ' checked' : ''}><span>被弾時に振動</span></label>` : ''}
         <a class="btn" id="g-start">LAUNCH ▸</a>
       </div>`;
+    gameOverlay.querySelectorAll('.cchip').forEach(ch=>ch.addEventListener('click', ()=>{   // SPEC-09g: コース選択
+      course = ch.dataset.c;
+      gameOverlay.querySelectorAll('.cchip').forEach(c2=>c2.classList.toggle('active', c2 === ch));
+    }));
     gameOverlay.querySelectorAll('.vchip').forEach(ch=>ch.addEventListener('click', ()=>{
       view = ch.dataset.v;
       gameOverlay.querySelectorAll('.vchip').forEach(c2=>c2.classList.remove('active'));
@@ -2856,7 +2933,7 @@ const AsteroidRun = (()=>{
     }));
     document.getElementById('g-start').addEventListener('click', ()=>{
       const vb = document.getElementById('g-vibe');
-      if(vb) localStorage.setItem('vg-vibe', vb.checked ? '1' : '0');   // SPEC-09e
+      if(vb) LS.set('vg-vibe', vb.checked ? '1' : '0');   // SPEC-09e
       applyFSChoice(); start(); });
   }
   function start(){
@@ -2879,7 +2956,9 @@ const AsteroidRun = (()=>{
     mt.x = 0; mt.y = 0;
     // SPEC-09c: シード付きディレクターで配置(通常モードのシードは毎回ランダム。F7でデイリーを追加)
     asts.forEach(hideMesh); cores.forEach(hideMesh);
-    director = Spawner.director((Math.random()*4294967296) >>> 0);
+    const daily = course === 'daily' ? Meta.dailySeed() : null;   // SPEC-09g: DAILYは本日のシード
+    director = Spawner.director(daily ? daily.seed : (Math.random()*4294967296) >>> 0);
+    st.course = course; st.dailyLabel = daily ? daily.label : null;
     director.prefill(110);
     placeItems(director.items);
     st.sector = 1;
@@ -2913,14 +2992,28 @@ const AsteroidRun = (()=>{
     hud();
     if(st.shields < 0) gameOver();   // シールド3枚が3発を吸収し、シールドなしの4発目で大破
   }
+  // SPEC-09g: 戦績の共有(ユーザーの操作時のみ。Web Share が無ければクリップボードへ)
+  async function share(btn){
+    if(!lastResult) return;
+    const text = Meta.shareText(lastResult);
+    try{
+      if(navigator.share){ await navigator.share({title:'VOID GATE // ASTEROID RUN', text}); return; }
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        await navigator.clipboard.writeText(text);
+        btn.textContent = 'COPIED ✓'; setTimeout(()=>{ btn.textContent = 'SHARE'; }, 1600);
+      }
+    }catch(e){ /* 共有シートのキャンセル等 */ }
+  }
   function gameOver(){
     playing = false; cancelAnimationFrame(raf);
     SoundEngine.engineStop();
     SoundEngine.ui('over');
     document.body.classList.remove('no-cursor');
     const total = score();   // SPEC-09e
-    const best = Math.max(total, +(localStorage.getItem('vg-ast-best')||0));
-    localStorage.setItem('vg-ast-best', best);
+    // SPEC-09g: 称号・ベスト・日付別ベスト・履歴を保存
+    const res = Meta.saveResult({score: total, sector: st.sector, course: st.course, label: st.dailyLabel});
+    const best = res.best;
+    lastResult = {score: total, sector: st.sector, course: st.course, label: st.dailyLabel};
     gameOverlay.innerHTML = `
       <div class="gscreen">
         <div class="gtitle" style="text-shadow:0 0 30px rgba(255,46,196,.7)">SHIP LOST</div>
@@ -2933,9 +3026,13 @@ const AsteroidRun = (()=>{
           <tr><td>最大コンボ</td><td>${st.maxCombo}</td><td></td></tr>
         </table>
         <div class="gscore">SCORE ${total.toLocaleString()}<small> / BEST ${best.toLocaleString()}</small></div>
-        <div class="gbtns"><a class="btn" id="g-retry">RETRY ▸</a><a class="btn magenta" id="g-quit">EXIT</a></div>
+        <div class="grank">RANK <b>${res.rank}</b>${st.course === 'daily' ? `<small>DAILY ${st.dailyLabel} / 本日のベスト ${res.dailyBest.toLocaleString()}</small>` : ''}</div>
+        <div class="ghist"><div class="ghist-h">HISTORY // 自己ベスト</div><ol>${res.hist.map(h=>
+          `<li><span>${h.score.toLocaleString()}</span><span>${h.rank}</span><span>S${String(h.sector).padStart(2, '0')}${h.course === 'daily' ? ' DAILY' : ''}</span><span>${h.date}</span></li>`).join('')}</ol></div>
+        <div class="gbtns"><a class="btn" id="g-retry">RETRY ▸</a><a class="btn" id="g-share">SHARE</a><a class="btn magenta" id="g-quit">EXIT</a></div>
       </div>`;
     document.getElementById('g-retry').addEventListener('click', start);
+    document.getElementById('g-share').addEventListener('click', e=>share(e.currentTarget));   // SPEC-09g
     document.getElementById('g-quit').addEventListener('click', closeLayer);
     lockButtons();   // 連打クリックの貫通防止
   }
@@ -3151,7 +3248,7 @@ const AsteroidRun = (()=>{
   }
   // SPEC-09e: 振動(タッチ端末のみ・設定でOFF可)。force はテスト用
   function buzz(ms, force){
-    if(localStorage.getItem('vg-vibe') === '0') return;
+    if(LS.get('vg-vibe') === '0') return;
     if(!(IS_TOUCH || force) || !navigator.vibrate) return;
     try{ navigator.vibrate(ms); }catch(e){}
   }
@@ -3856,8 +3953,8 @@ document.getElementById('deck-explore').addEventListener('click', e=>{
 });
 // SPEC-07c: ベストスコア表示(端末ローカル値)
 function renderBest(){
-  const a = localStorage.getItem('vg-ast-best');
-  document.getElementById('best-ast').textContent = a ? Number(a).toLocaleString() : 'NO RECORD';
+  const a = LS.get('vg-ast-best'), rk = LS.get('vg-ast-rank');   // SPEC-09g: 最高称号を併記
+  document.getElementById('best-ast').textContent = a ? Number(a).toLocaleString() + (rk ? ` · ${rk}` : '') : 'NO RECORD';
 }
 renderBest();
 // SPEC-07c: 操作早見表(CONTROLS単一ソース、PC/SPで出し分け)
@@ -3984,7 +4081,7 @@ function pageLookProbe(id, k, snap = false){
     blownPct:+(hot/n*100).toFixed(3), crushedPct:+(crush/n*100).toFixed(2),
     rockPx:+(rn/n*100).toFixed(2), rockMean: rn ? +(rsum/rn).toFixed(4) : null, rockCrushedPct: rn ? +(rcr/rn*100).toFixed(2) : null, url};
 }
-window.VG = {THREE, Look, Spawner, SoundEngine, AsteroidRun, Quality, openLayer, closeLayer,
+window.VG = {THREE, Look, Spawner, Meta, renderBest, SoundEngine, AsteroidRun, Quality, openLayer, closeLayer,
   Tl, Assets, Guide, pageMouse: mouse, isTouch: IS_TOUCH,
   pageFx: {composer: pageComposer, get bloom(){ return pageBloom; },
     camera, stepCamera: stepPageCamera, lookProbe: pageLookProbe, scene, renderer}};
