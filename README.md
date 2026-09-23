@@ -73,6 +73,7 @@ python3 -m http.server 8000
 | [DESIGN.md](DESIGN.md) | デザイン仕様書（ビジュアル・インタラクション・ゲーム設計・SP対応） |
 | [QUALITY_PLAN.md](QUALITY_PLAN.md) | 素材クオリティ向上の方針書（Phase 1〜4、全実装済み） |
 | [specs/](specs/00-overview.md) | SDD詳細設計書 SPEC 00〜06（要件ID・受け入れ基準つき、全てVerified） |
+| [specs/09](specs/09-realism-gameplay-policy.md) | リアル質感×ゲーム品質向上: 方針書（承認済み）・詳細設計 09a〜09g・[実装計画](specs/09-implementation-plan.md)。比較ルックデブ: `labs/lookdev.html` |
 | [HANDOFF.md](HANDOFF.md) | オフライン化完了報告（2026-06-12時点のスナップショット） |
 
 ## テスト

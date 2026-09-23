@@ -1,0 +1,121 @@
+# SPEC 09a — Phase F1: 当たり判定の正確化（RadialHull + 機体4球）
+
+状態: **Draft** ／ 親: [SPEC-09](09-realism-gameplay-policy.md) ／ 前提: なし（最初のフェーズ） ／ 外部素材: 不要
+
+## 1. 目的
+
+「当たっていないのに被弾」「翼が岩を貫通」を解消する。後続の P3（公平性検証）・P5（ニアミス判定）は
+すべて本フェーズの距離計算を土台にするため、最初に確定させる。
+
+### 現状（計測済み）
+- 岩の判定: 中心間距離 `< r + 2.2` の球（index.html L2254）
+- 岩の見た目: `deformRock` の半径係数 k が約 0.4〜1.5 に変化 → 表面は判定半径の **0.53〜1.37 倍**
+  （r=8 で最大約 3.8 の隙間 / 約 3 の食い込み）
+- 機体: 判定 2.2 の1球。実形状は主翼の半幅 3.75・機首長 5.2
+
+## 2. 要件
+
+| ID | 要件 |
+|---|---|
+| F1-01 | 岩ジオメトリ8種それぞれに**方向別半径テーブル**（RadialHull）を生成し、`Assets` から取得できる |
+| F1-02 | `RadialHull.radiusAt(localDir)` の値と実メッシュ表面（中心からのレイ交差距離）の差が、**r=8 換算で ±0.6 以内**（全8ジオメトリ × 無作為 500 方向） |
+| F1-03 | 機体は**4球**（機首・胴・左翼・右翼）で近似し、機体の姿勢（ロール/ピッチ）に追従する |
+| F1-04 | 被弾判定: いずれかの機体球と岩表面との**すき間 < 0** で被弾。すき間は機体に有利な寛容係数 `HIT_LENIENCY=.9`（機体球半径に乗算）を適用 |
+| F1-05 | トンネリング防止: 1フレームの移動線分上の最接近点で判定（現行の nearestDz 方式を線分版に一般化） |
+| F1-06 | 粗判定（外接球）で候補を絞り、精判定は候補のみ。1フレームの判定コストは 46岩 で **0.3ms 未満**（PC） |
+| F1-07 | 判定関数は `clearance(rock, ship)` を返す純粋関数として公開する（ニアミス判定 F5 と公平性検証 F3 で再利用） |
+| F1-08 | コア回収判定（現行 `<34` = 半径約5.8）は変更しない |
+| F1-09 | 既存のゲームテスト（phase1〜4）全グリーン維持 |
+
+## 3. 技術設計
+
+### 3.1 RadialHull（F1-01/02）
+
+岩は「正二十面体の各頂点を中心から放射方向に伸縮した形」なので、表面は**方向の関数 r(dir)** で表せる。
+
+```js
+// Assets 内。geo は deformRock 済みの単位スケール形状
+function buildRadialHull(geo){
+  const DIRS = unitIcoDirs(3);                 // 正二十面体 detail3 の頂点方向 = 642 方向（共有）
+  const pos = geo.attributes.position, v = new THREE.Vector3();
+  const R = new Float32Array(DIRS.length);
+  // 各サンプル方向に最も近い頂点の半径…ではなく、レイ×三角形の交差距離を厳密に前計算する
+  for(let i = 0; i < DIRS.length; i++) R[i] = rayHitFromCenter(geo, DIRS[i]);
+  let max = 0; R.forEach(x=>max = Math.max(max, x));
+  return {
+    max,                                         // 外接球半径（粗判定用）
+    radiusAt(d){                                 // d: 岩ローカルの単位ベクトル
+      // 上位3方向の dot^8 重み付き補間（1フレーム数十回程度なので線形探索で十分）
+      ...
+    }
+  };
+}
+```
+
+- 前計算は起動時に1回（8ジオメトリ × 642方向 × 三角形数）。IS_TOUCH（detail2）では約 0.1 秒以内を目標に、
+  間引き方向 detail2（162方向）を使う
+- テーブルは `geo.userData.hull` に保持。`Assets.rockGeos()` の戻り値と同じ参照から取れる
+
+### 3.2 機体4球（F1-03）
+
+`buildShip` の形状（機首: ConeGeometry(1.3, 5.2) を -z 向き、主翼: Box(7.5, .3, 2.4) at (0,-.4,1.2)）から:
+
+| 球 | ローカル中心 | 半径 | 覆う範囲 |
+|---|---|---|---|
+| nose | (0, 0, -1.7) | .80 | 機首先端〜前半 |
+| body | (0, -.1, .9) | 1.35 | 胴・ノズル |
+| wingL | (-2.6, -.4, 1.2) | 1.15 | 翼端 -3.75 まで |
+| wingR | ( 2.6, -.4, 1.2) | 1.15 | 翼端 +3.75 まで |
+
+- 定数 `SHIP_SPHERES` として `Assets` に置く（サイト側 Sortie の衝突検証テスト FB-02b でも同じ値を使う）
+- 毎フレーム `ship.updateMatrixWorld()` 後にワールド座標へ変換（4回の applyMatrix4）
+- コックピット視点（ship.visible=false）でも判定は同一
+
+### 3.3 すき間計算（F1-04/05/07）
+
+```js
+// rock: Mesh(userData.r=スケール, geometry.userData.hull), sd: このフレームの岩の移動量(+z)
+function clearance(rock, sphW /*[{c:Vector3, r}]*/, sd){
+  const hull = rock.geometry.userData.hull, s = rock.userData.r;
+  let best = Infinity;
+  for(const S of sphW){
+    // 岩中心の移動線分 [p - (0,0,sd), p] 上で S.c に最も近い点 q（F1-05）
+    const q = closestOnSegment(rock.position, sd, S.c);
+    const d = S.c.clone().sub(q), dist = d.length();
+    if(dist > hull.max*s + S.r) { best = Math.min(best, dist - hull.max*s - S.r); continue; }   // 粗判定
+    const local = d.applyQuaternion(_invQ(rock)).normalize();       // 岩ローカル方向
+    best = Math.min(best, dist - hull.radiusAt(local)*s - S.r*HIT_LENIENCY);
+  }
+  return best;   // <0 で接触。0〜NEAR でニアミス候補（F5）
+}
+```
+
+- ループ本体（L2245〜）の `rr = r + 2.2` 判定を `clearance(...) < 0` に置換
+- 自転による形状変化は岩の quaternion の逆回転で扱う（テーブルはローカル空間）
+
+## 4. 受け入れテスト（tests/phaseF1.js）
+
+| テストID | 検証内容 |
+|---|---|
+| F1-T01 | 全8ジオメトリに `userData.hull` があり、`max` が頂点の最大半径と ±1% 以内で一致 |
+| F1-T02 | 無作為 500 方向 × 8 ジオメトリで `radiusAt` と Raycaster（DoubleSide の一時メッシュ）の距離差 ≤ .075（= r8 で ±0.6） |
+| F1-T03 | 機体4球が翼端 (±3.75, -.4, 1.2) と機首先端 (0,0,-2.6) を包含（寛容係数適用前） |
+| F1-T04 | 翼端の真横 1.0 に岩表面が来る配置 → 旧判定では非接触、新判定では接触（翼の貫通の解消） |
+| F1-T05 | 判定球の内側だが岩表面から 1.5 離れる配置（クレーター側）→ 旧判定では被弾、新判定では非被弾 |
+| F1-T06 | 速度 640、dt=.05（1フレームで 32 移動）で岩が機体を通過する配置 → 接触を検出（トンネリングなし） |
+| F1-T07 | ロール 60° のとき、翼の上方にある岩に対して左右の翼球が正しく入れ替わる |
+| F1-T08 | 46岩 × 1000 フレームの判定時間の平均 < 0.3ms（PC） |
+| F1-T09 | `clearance` を公開（`VG.AsteroidRun.debug().clearance`）し、戻り値が符号付き距離（接触の深さで負） |
+| F1-T10 | コア回収半径は不変（`<34`） |
+
+## 5. 既存テストへの影響
+
+なし（判定の内部置換のみ）。サイトの FB-02b（FLIGHT の岩が機体をすり抜けない）は、
+`SHIP_SPHERES` と RadialHull を使う厳密版に**追加で**検証を足す（既存アサーションは残す）。
+
+## 6. リスク
+
+| リスク | 対策 |
+|---|---|
+| 翼の判定追加で体感難度が上がる | 寛容係数 .9 と、F3 の公平性検証（通れる隙間の保証）で相殺。実プレイで .85〜.95 の範囲を定数のみで調整 |
+| 起動時の前計算で初回表示が遅れる | ゲーム起動時（`build()`）に実行。サイト初期表示には影響させない。SP は 162 方向に間引き |
