@@ -1190,12 +1190,15 @@ const SoundEngine = (()=>{
   let ctx = null, master = null, noiseBuf = null, engine = null;
   let muted = LS.get('vg-mute') === '1';
   const voices = new Set();          // 再生中SFX(上限8, AUD-12)
-  const test = {lastSfx: null, intensity: 0};
+  // テスト用の記録(直近の効果音と種類ごとの回数)
+  const test = {intensity: 0, counts: {}, _last: null,
+    get lastSfx(){ return this._last; },
+    set lastSfx(v){ this._last = v; if(v) this.counts[v.type] = (this.counts[v.type] || 0) + 1; }};
 
   function ensure(){
     if(!ctx){
       try{
-        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        ctx = new (window.AudioContext || window.webkitAudioContext)({latencyHint: 'interactive'});   // SPEC-11: 低遅延を明示
         master = ctx.createGain();
         master.gain.value = muted ? 0 : 1;
         master.connect(ctx.destination);
@@ -1246,8 +1249,14 @@ const SoundEngine = (()=>{
     ensure();
     const big = Math.min(1, r/3);
     const lpf0 = 500 - big*250;                       // 大きい岩ほど低く重い(AUD-04)
-    test.lastSfx = {type:'explosion', lpf: lpf0}; if(!ctx) return;
+    test.lastSfx = {type:'explosion', lpf: lpf0, r}; if(!ctx) return;
     const dur = .4 + big*.4, t0 = ctx.currentTime, v = voice(dur);
+    // SPEC-11: 冒頭の「破裂」(高域ノイズ+短いクリック)。低音だけだと小型スピーカーで立ち上がりが鈍く遅れて聞こえるため
+    const tn = noise(), thp = ctx.createBiquadFilter(), tg = ctx.createGain();
+    thp.type = 'highpass'; thp.frequency.value = 2200;
+    tg.gain.setValueAtTime(1.6, t0); tg.gain.exponentialRampToValueAtTime(.001, t0 + .07);
+    tn.connect(thp).connect(tg).connect(v.g); tn.start(t0); tn.stop(t0 + .08);
+    tone(v, 'triangle', 1900, 260, .06, .5);
     const n = noise(), lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
     lp.frequency.setValueAtTime(lpf0, t0);
@@ -1274,19 +1283,26 @@ const SoundEngine = (()=>{
   }
   // SPEC-09e: ニアミスの風切り音(岩が通過した側に定位)。0.15秒以内の連続は1回にまとめる
   let lastWhoosh = -1;
-  function whoosh(pan){
-    ensure(); test.lastSfx = {type:'whoosh', pan}; if(!ctx) return;
+  // lead: 今からピーク(すれ違う瞬間)までの秒数。接近で膨らみ、すれ違いで頂点、ドップラーのように音程が下がって消える(SPEC-11)
+  function whoosh(pan, lead = 0){
+    ensure(); test.lastSfx = {type:'whoosh', pan, lead}; if(!ctx) return;
     const t0 = ctx.currentTime;
     if(t0 - lastWhoosh < .15) return;
     lastWhoosh = t0;
-    const v = voice(.3), n = noise(), bp = ctx.createBiquadFilter();
+    const L = Math.max(0, Math.min(.4, lead)), tp = t0 + L;
+    const v = voice(L + .3), n = noise(), bp = ctx.createBiquadFilter();
     bp.type = 'bandpass'; bp.Q.value = 1.2;
-    bp.frequency.setValueAtTime(1200, t0); bp.frequency.exponentialRampToValueAtTime(400, t0 + .25);
+    bp.frequency.setValueAtTime(1800, t0); bp.frequency.exponentialRampToValueAtTime(1200, tp + .001);
+    bp.frequency.exponentialRampToValueAtTime(400, tp + .25);
     if(ctx.createStereoPanner){ const pn = ctx.createStereoPanner(); pn.pan.value = Math.max(-1, Math.min(1, pan*.8)); n.connect(bp).connect(pn).connect(v.g); }
     else n.connect(bp).connect(v.g);
-    env(v.g, t0, .35, .28);
-    n.start(t0); n.stop(t0 + .3);
+    v.g.gain.setValueAtTime(.0001, t0);
+    v.g.gain.exponentialRampToValueAtTime(.35, Math.max(t0 + .006, tp));
+    v.g.gain.exponentialRampToValueAtTime(.0001, tp + .28);
+    n.start(t0); n.stop(tp + .3);
   }
+  // 端末の出力遅延(秒)。Bluetooth などで大きい場合に予測できる音を前倒しする(上限0.3秒)
+  const outputLatency = ()=>ctx ? Math.min(.3, (ctx.outputLatency || 0) + (ctx.baseLatency || 0)) : 0;
   // SPEC-09e: 倍率が上がるたびに音程が上がる2音(tier 0..3)
   function combo(tier){
     ensure(); test.lastSfx = {type:'combo', tier}; if(!ctx) return;
@@ -1375,14 +1391,35 @@ const SoundEngine = (()=>{
   }
   function toggleMute(){ setMute(!muted); }
   function stopAll(){ [...voices].forEach(v=>v.kill()); engineStop(); }   // AUD-11
+  // SPEC-11: 効果音をオフラインで描画し、聞こえ始めるまでの時間を測る(テスト用)
+  // name の効果音を OfflineAudioContext で鳴らし、5ms 窓の RMS がピークの50%に達する時刻(全帯域/300Hz以上)を返す
+  async function _render(name, ...args){
+    const SR = 48000, dur = 1.2;
+    const saved = {ctx, master, noiseBuf, muted}, savedWhoosh = lastWhoosh; lastWhoosh = -1;
+    const off = new OfflineAudioContext(1, SR*dur, SR);
+    ctx = off; master = off.createGain(); master.gain.value = 1; muted = false;
+    master.connect(off.destination);
+    noiseBuf = off.createBuffer(1, SR, SR); const nd = noiseBuf.getChannelData(0); for(let i = 0; i < nd.length; i++) nd[i] = Math.random()*2 - 1;
+    let buf;
+    try{ ({ensure, gun, explosion, impact, coreGet, whoosh, combo, warn, sector}[name])(...args); buf = await off.startRendering(); }
+    finally{ ({ctx, master, noiseBuf, muted} = saved); lastWhoosh = savedWhoosh; }
+    const d = buf.getChannelData(0), W = Math.round(SR*.005);
+    const onset = arr=>{ const rms = []; for(let i = 0; i + W <= arr.length; i += W){ let q = 0; for(let j = i; j < i + W; j++) q += arr[j]*arr[j]; rms.push(Math.sqrt(q/W)); }
+      const pk = Math.max(...rms); const k = rms.findIndex(v=>v >= pk*.5); const kp = rms.indexOf(pk);
+      return {t50: +(k*5).toFixed(0), tPeak: +(kp*5).toFixed(0), peak: +pk.toFixed(4)}; };
+    // 300Hz以上: 1次の差分で簡易高域通過(打撃の立ち上がり=小型スピーカーで聞こえる成分)
+    const h = new Float32Array(d.length); let prev = 0, y = 0; const a = Math.exp(-2*Math.PI*300/SR);
+    for(let i = 0; i < d.length; i++){ y = a*(y + d[i] - prev); prev = d[i]; h[i] = y; }
+    return {full: onset(d), high: onset(h)};
+  }
   function _test(){
     return {ctx, voices: voices.size, engineOn: !!engine,
       engineFreq: engine ? engine.o1.frequency.value : 0,
-      masterGain: master ? master.gain.value : -1, lastSfx: test.lastSfx, intensity: test.intensity};
+      masterGain: master ? master.gain.value : -1, lastSfx: test.lastSfx, intensity: test.intensity, counts: test.counts};
   }
-  return {ensure, gun, explosion, impact, coreGet, ui, sector, warn, whoosh, combo, intensity,
+  return {ensure, gun, explosion, impact, coreGet, ui, sector, warn, whoosh, combo, intensity, outputLatency,
           engineStart, engineSpeed, enginePause, engineStop,
-          setMute, toggleMute, stopAll, _test, get muted(){ return muted; }};
+          setMute, toggleMute, stopAll, _test, _render, get muted(){ return muted; }};
 })();
 
 /* ================= 共有3Dファクトリ Assets (SPEC-07a) — ゲームとページ双方から利用 ================= */
@@ -2970,7 +3007,7 @@ const AsteroidRun = (()=>{
     hud();
   }
   // SPEC-09c: 配置はディレクター(Spawner.director)が管理し、メッシュはその位置を写すだけ
-  function hideMesh(m){ m.userData.item = null; m.visible = false; m.position.set(0, 0, 1e5); }
+  function hideMesh(m){ m.userData.item = null; m.visible = false; m.position.set(0, 0, 1e5); m.userData.nm = false; m.userData.ws = false; }
   function freeMesh(m){   // 被弾・撃破・回収で消えた物をディレクターからも外す
     const it = m.userData.item;
     if(it){ if(director) director.release(it.id); it.mesh = null; }
@@ -2981,7 +3018,7 @@ const AsteroidRun = (()=>{
       const m = (it.kind === 'rock' ? asts : cores).find(q=>!q.userData.item);
       if(!m){ director.release(it.id); continue; }
       m.userData.item = it; it.mesh = m; m.visible = true;
-      if(it.kind === 'rock'){ m.userData.r = it.r; m.scale.setScalar(it.r); m.userData.nm = false; }
+      if(it.kind === 'rock'){ m.userData.r = it.r; m.scale.setScalar(it.r); m.userData.nm = false; m.userData.ws = false; }
       m.position.set(it.x, it.y, it.z);
     }
   }
@@ -3358,7 +3395,7 @@ const AsteroidRun = (()=>{
   function nearMiss(m){
     m.userData.nm = true;
     addScore('near', 150);
-    SoundEngine.whoosh(Math.sign(m.position.x - ship.position.x) || 1);
+    if(!m.userData.ws) SoundEngine.whoosh(Math.sign(m.position.x - ship.position.x) || 1);   // 先行で鳴らしていなければ今鳴らす
     st.fovKick = 4; st.nmFlash = 1;
   }
   function destroyRock(m){   // 機関砲の撃破(大岩ほど高得点)
@@ -3397,10 +3434,28 @@ const AsteroidRun = (()=>{
   }
   // SPEC-09a: 岩×機体4球の判定(移動線分の最接近点で測るのでトンネリングしない)。false=ゲーム終了
   const shipSph = Assets.SHIP_SPHERES.map(S=>({name:S.name, c:new THREE.Vector3(), c2:S.c2 ? new THREE.Vector3() : null, r:S.r}));
+  // SPEC-11: ニアミス音の先行発音。すれ違う瞬間に音のピークが「聞こえる」よう、0.12秒+端末の出力遅延ぶん前に予測して鳴らす
+  const WHOOSH_LEAD = .12;
+  function anticipateWhoosh(sz){
+    const ol = SoundEngine.outputLatency(), win = (WHOOSH_LEAD + ol)*st.speed;
+    for(const m of asts){
+      if(!m.visible || m.userData.ws || m.userData.nm) continue;
+      const z = m.position.z;
+      if(z >= sz || z < sz - win) continue;
+      m.position.z = sz;                               // すれ違う時点の位置で予測
+      const c = Assets.clearance(m, shipSph, 0);
+      m.position.z = z;
+      if(c > 0 && c <= NEAR){
+        m.userData.ws = true;
+        SoundEngine.whoosh(Math.sign(m.position.x - ship.position.x) || 1, Math.max(0, (sz - z)/st.speed - ol));
+      }
+    }
+  }
   function collide(now, sd, inv = false){
     if(inv) return true;
     Assets.shipSpheresWorld(ship, shipSph);
     const sz = ship.position.z;
+    if(st.speed > 0) anticipateWhoosh(sz);
     for(const m of asts){
       if(!m.visible || m.position.z < -60 || m.position.z - sd > 30) continue;   // 奥行きが離れた岩は判定不要(粗判定の手前で除外)
       const c = Assets.clearance(m, shipSph, sd);
@@ -3841,7 +3896,8 @@ const Guide = (()=>{
     return {group:g, core, target, tracers, shards, flash, ring,
       fz:{f0:.50, f1:.80},
       edges:[{at:.28, fire:()=>SoundEngine.coreGet()}, {at:.42, fire:()=>SoundEngine.gun()}],
-      onRelease:()=>SoundEngine.explosion(2),
+      // SPEC-11: 映像の時間(ta)で鳴らす — 着弾閃光の誕生で着弾音、解除後に爆発が広がり始める瞬間で爆発音
+      taEdges:[{at:.49, fire:()=>SoundEngine.explosion(1)}, {at:.55, fire:()=>SoundEngine.explosion(2)}],
       update(ta){
         // コア: 前方から接近し機体位置で消える(回収)
         core.visible = ta < .28;
@@ -3925,7 +3981,7 @@ const Guide = (()=>{
       fz:{f0:.45, f1:.80},
       camOff:{x:-.6, y:.4},
       edges:[{at:.43, fire:()=>SoundEngine.impact(false)}],
-      onRelease:()=>SoundEngine.impact(true),
+      taEdges:[{at:.505, fire:()=>SoundEngine.impact(true)}],   // SPEC-11: シールドが砕け始める瞬間に警告音
       update(ta){
         // 機体前面の位置(ローカル)
         const from = new THREE.Vector3().copy(sortie.ship.position).sub(g.position);
@@ -4048,6 +4104,10 @@ const Guide = (()=>{
           // エッジ音(B-06方式): 章内イベント / フリーズ進入(f0) / 解除(f1)+結末SE
           if(st.edges) for(const e of st.edges)
             if(d._prev < e.at && tl >= e.at) e.fire();
+          // SPEC-11: 映像の時間(ta)で発火するエッジ(凍結中は ta が止まるため、映像の出来事と音が必ず一致する)
+          if(st.taEdges) for(const e of st.taEdges)
+            if(d._prevTa < e.at && ta >= e.at) e.fire();
+          d._prevTa = ta;
           if(st.fz){
             if(d._prev < st.fz.f0 && tl >= st.fz.f0) SoundEngine.ui('hold');
             if(d._prev < st.fz.f1 && tl >= st.fz.f1){ SoundEngine.ui('sync'); if(st.onRelease) st.onRelease(); }

@@ -82,12 +82,13 @@ python3 -m http.server 8000
 | [specs/](specs/00-overview.md) | SDD詳細設計書 SPEC 00〜09（要件ID・受け入れ基準つき） |
 | [specs/09](specs/09-realism-gameplay-policy.md) | リアル質感×ゲーム品質向上: 方針書・詳細設計 09a〜09g・[実装計画](specs/09-implementation-plan.md)（F1〜F7 全て Verified） |
 | [specs/10](specs/10-ship-redesign.md) | 機体デザイン刷新（一体成形のステルス迎撃機）— Verified |
+| [specs/11](specs/11-audio-timing.md) | 効果音のタイミング調整（計測と対策）— Verified |
 | [labs/before-after.html](labs/before-after.html) | SPEC-09 の before / after 比較（着手前のコードと本番コードを同じ配置・カメラで左右比較）。提案時のルックデブは `labs/lookdev.html` |
 | [HANDOFF.md](HANDOFF.md) | オフライン化完了報告（2026-06-12時点のスナップショット） |
 
 ## テスト
 
-`tests/phase1〜4.js`(ゲーム) + `tests/phaseA〜D・E1〜E3.js`(サイト) + `tests/phaseSEO.js` + `tests/phaseF1〜F7.js`(SPEC-09) + `tests/phaseS1.js`(SPEC-10 機体) に受け入れテスト計325項目（20スイート）。`tests/run-all.js` で一括実行できます:
+`tests/phase1〜4.js`(ゲーム) + `tests/phaseA〜D・E1〜E3.js`(サイト) + `tests/phaseSEO.js` + `tests/phaseF1〜F7.js`(SPEC-09) + `tests/phaseS1.js`(SPEC-10 機体) + `tests/phaseAU.js`(SPEC-11 効果音) に受け入れテスト計332項目（21スイート）。`tests/run-all.js` で一括実行できます:
 
 ```js
 fetch('tests/run-all.js').then(r=>r.text()).then(eval);   // 結果は window.__ALLRESULTS
