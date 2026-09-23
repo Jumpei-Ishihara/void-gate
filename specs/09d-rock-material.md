@@ -90,11 +90,11 @@ key.target.position.copy(ship.position);
 | F4-T01 | 同じシードから同じ高さマップ（画素ハッシュ一致）。`makeRockTex` 系に `Math.random` が残っていない |
 | F4-T02 | 3 材質とも map / normalMap / roughnessMap あり、bumpMap なし |
 | F4-T03 | 法線マップの平均が (0.5, 0.5, 1.0) 近傍（±.05）で、平坦領域の法線が +z |
-| F4-T04 | トライプラナー: 岩の2つの異なる面（法線が直交）で、テクスチャの縦横比の歪みが 1.2 以内（画面上の模様の自己相関で計測） |
+| F4-T04 | トライプラナー（UV非依存）: uv 属性を消した岩でも模様が出る（一様光下の分散がトライプラナー ON で OFF の 3 倍超）→ §4.1 |
 | F4-T05 | 岩種: 色が C/S/M の3色、M 型の金属度 > C/S 型、`userData.isRock/type` が全岩にある |
 | F4-T06 | 影: PC L0 で `R.shadowMap.enabled`、castShadow=true の岩が ≤ 8、機体が receiveShadow |
 | F4-T07 | Quality L1 で影 OFF、L2 で TRIPLANAR の define が外れる |
-| F4-T08 | 輝度プローブ: 基準 ±20% を維持（F2-T08 と同条件） |
+| F4-T08 | 輝度プローブ: F2 §3.4.1 の改訂指標を維持（ゲーム2視点・サイト4章） |
 | F4-T09 | サイトの Sortie 岩も新材質（`Assets.rockMats()` と同一参照） |
 | F4-T10 | draw call: PC L0 ≤ 155、SP ≤ 140 |
 

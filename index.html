@@ -361,6 +361,19 @@ body.no-cursor #cursor{
 #g-warn.right{right:0;background:linear-gradient(270deg,rgba(255,46,196,.45),transparent)}
 #g-warn.show{animation:gwarn 1.5s steps(1) forwards}
 @keyframes gwarn{0%,33%,66%{opacity:1}16%,50%,83%{opacity:.15}100%{opacity:0}}
+/* SPEC-09e: 結果画面の内訳 */
+.gbreak{margin:0 auto 18px;border-collapse:collapse;font-size:12px;letter-spacing:.08em;min-width:min(420px,86vw)}
+.gbreak td{padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.07);color:var(--text);text-align:left}
+.gbreak td:first-child{color:var(--dim)}
+.gbreak td:last-child{text-align:right;font-family:'Orbitron',sans-serif;color:#fff}
+/* SPEC-09e: 加点ポップアップ(画面下中央寄り。レティクルには重ねない) */
+#g-pop{position:absolute;left:50%;bottom:9%;transform:translateX(-50%);z-index:4;pointer-events:none;
+  display:flex;flex-direction:column-reverse;align-items:center;gap:4px}
+#game-layer.cockpit #g-pop{bottom:36%}   /* 操縦席: 計器パネルの上・レティクルの下 */
+.gpop{font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:.2em;color:#fff;white-space:nowrap;
+  text-shadow:0 0 10px var(--cyan);animation:gpop .8s ease-out forwards}
+@keyframes gpop{0%{opacity:0;transform:translateY(6px)}15%{opacity:1;transform:translateY(0)}70%{opacity:1}100%{opacity:0;transform:translateY(-10px)}}
+.gcombo{color:var(--magenta);text-shadow:0 0 10px var(--magenta);margin-left:6px}
 #game-hud{
   position:absolute;top:20px;left:24px;z-index:4;
   font-family:'Orbitron',sans-serif;color:var(--cyan);
@@ -601,6 +614,7 @@ body.no-cursor #cursor{
   <div id="game-hud"></div>
   <div id="g-sector" aria-live="polite"></div>
   <div id="g-warn" aria-hidden="true"></div>
+  <div id="g-pop" aria-hidden="true"></div>
   <div id="game-overlay"></div>
   <button id="game-exit">EXIT ✕</button>
   <button id="fire-btn">FIRE</button>
@@ -1139,7 +1153,7 @@ const SoundEngine = (()=>{
   let ctx = null, master = null, noiseBuf = null, engine = null;
   let muted = localStorage.getItem('vg-mute') === '1';
   const voices = new Set();          // 再生中SFX(上限8, AUD-12)
-  const test = {lastSfx: null};
+  const test = {lastSfx: null, intensity: 0};
 
   function ensure(){
     if(!ctx){
@@ -1221,6 +1235,37 @@ const SoundEngine = (()=>{
     [523, 659, 784].forEach((f, i)=>tone(v, 'sine', f, f, .14, .3, i*.06));   // 上昇アルペジオ(AUD-06)
     env(v.g, t0, .45, .32);
   }
+  // SPEC-09e: ニアミスの風切り音(岩が通過した側に定位)。0.15秒以内の連続は1回にまとめる
+  let lastWhoosh = -1;
+  function whoosh(pan){
+    ensure(); test.lastSfx = {type:'whoosh', pan}; if(!ctx) return;
+    const t0 = ctx.currentTime;
+    if(t0 - lastWhoosh < .15) return;
+    lastWhoosh = t0;
+    const v = voice(.3), n = noise(), bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 1.2;
+    bp.frequency.setValueAtTime(1200, t0); bp.frequency.exponentialRampToValueAtTime(400, t0 + .25);
+    if(ctx.createStereoPanner){ const pn = ctx.createStereoPanner(); pn.pan.value = Math.max(-1, Math.min(1, pan*.8)); n.connect(bp).connect(pn).connect(v.g); }
+    else n.connect(bp).connect(v.g);
+    env(v.g, t0, .35, .28);
+    n.start(t0); n.stop(t0 + .3);
+  }
+  // SPEC-09e: 倍率が上がるたびに音程が上がる2音(tier 0..3)
+  function combo(tier){
+    ensure(); test.lastSfx = {type:'combo', tier}; if(!ctx) return;
+    const t0 = ctx.currentTime, v = voice(.32), f = 440*Math.pow(2, tier*2/12);
+    tone(v, 'triangle', f, f, .1, .3); tone(v, 'triangle', f*1.5, f*1.5, .16, .3, .08);
+    env(v.g, t0, .35, .32);
+  }
+  // SPEC-09e: 音の強さ(0..1) — エンジン音に重ねた脈動レイヤーの音量・明るさ・速さ
+  function intensity(k){
+    test.intensity = Math.max(0, Math.min(1, k));
+    if(!ctx || !engine || !engine.pulse) return;
+    const t = ctx.currentTime, P = engine.pulse, x = test.intensity;
+    P.g.gain.setTargetAtTime(.0001 + x*.5, t, .4);
+    P.lp.frequency.setTargetAtTime(260 + x*1400, t, .4);
+    P.lfo.frequency.setTargetAtTime(4 + x*4, t, .4);
+  }
   // SPEC-09c: セクター遷移(上昇2音) / 彗星の予兆(短い3連の警告音)
   function sector(){
     ensure(); test.lastSfx = {type:'sector'}; if(!ctx) return;
@@ -1254,7 +1299,16 @@ const SoundEngine = (()=>{
     g.gain.exponentialRampToValueAtTime(.14, ctx.currentTime + .25);
     o1.connect(lpf); o2.connect(lpf); lpf.connect(g).connect(master);
     o1.start(); o2.start();
-    engine = {o1, o2, lpf, g};
+    // SPEC-09e: 脈動レイヤー(矩形波をLFOで振幅変調)。エンジンの音量ノード経由なので一時停止/停止のフェードに従う
+    const po = ctx.createOscillator(); po.type = 'square'; po.frequency.value = 55;
+    const plp = ctx.createBiquadFilter(); plp.type = 'lowpass'; plp.frequency.value = 260;
+    const am = ctx.createGain(); am.gain.value = .5;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 4;
+    const lfoG = ctx.createGain(); lfoG.gain.value = .5; lfo.connect(lfoG).connect(am.gain);
+    const pg = ctx.createGain(); pg.gain.value = .0001;
+    po.connect(plp).connect(am).connect(pg).connect(g);
+    po.start(); lfo.start();
+    engine = {o1, o2, lpf, g, pulse:{po, lp:plp, g:pg, lfo}};
   }
   function engineSpeed(spd){
     if(!engine) return;
@@ -1275,7 +1329,7 @@ const SoundEngine = (()=>{
     const e = engine; engine = null;
     e.g.gain.cancelScheduledValues(ctx.currentTime);
     e.g.gain.exponentialRampToValueAtTime(.0001, ctx.currentTime + .18);
-    setTimeout(()=>{ try{ e.o1.stop(); e.o2.stop(); e.g.disconnect(); }catch(err){} }, 240);
+    setTimeout(()=>{ try{ e.o1.stop(); e.o2.stop(); e.pulse.po.stop(); e.pulse.lfo.stop(); e.g.disconnect(); }catch(err){} }, 240);
   }
   function setMute(m){
     muted = !!m;
@@ -1287,9 +1341,9 @@ const SoundEngine = (()=>{
   function _test(){
     return {ctx, voices: voices.size, engineOn: !!engine,
       engineFreq: engine ? engine.o1.frequency.value : 0,
-      masterGain: master ? master.gain.value : -1, lastSfx: test.lastSfx};
+      masterGain: master ? master.gain.value : -1, lastSfx: test.lastSfx, intensity: test.intensity};
   }
-  return {ensure, gun, explosion, impact, coreGet, ui, sector, warn,
+  return {ensure, gun, explosion, impact, coreGet, ui, sector, warn, whoosh, combo, intensity,
           engineStart, engineSpeed, enginePause, engineStop,
           setMute, toggleMute, stopAll, _test, get muted(){ return muted; }};
 })();
@@ -2321,6 +2375,10 @@ const AsteroidRun = (()=>{
     c.fillStyle = noCore ? '#ff2ec4' : '#7dffec';
     c.font = '28px Orbitron, monospace';
     c.fillText(String(st.cores).padStart(2, '0') + (noCore ? ' NO CORE' : ''), 32, 216);
+    if(st.mult > 1){   // SPEC-09e F5-15: コンボ倍率
+      c.fillStyle = '#ff2ec4'; c.font = '24px Orbitron, monospace';   // 右端はスロットルレバーに隠れるためシールド表示の右隣に置く
+      c.fillText('×' + st.mult.toFixed(1), 168, 128);
+    }
     dtex[2].needsUpdate = true;
 
     // 被弾直後は全計器にノイズ走査線グリッチ(FX-06)。CRITICAL時は赤系
@@ -2566,10 +2624,7 @@ const AsteroidRun = (()=>{
     SoundEngine.gun();
     if(tgt){
       st.cores--;
-      boom(tgt.position.clone(), tgt.userData.r, tgt.material);
-      SoundEngine.explosion(tgt.userData.r);
-      freeMesh(tgt);
-      shake = Math.min(1, shake + .25);   // 反動
+      destroyRock(tgt);   // SPEC-09e: 撃破点(倍率つき)+ヒットストップ
       hud();
     }
   }
@@ -2599,6 +2654,7 @@ const AsteroidRun = (()=>{
   }
   function pickupCore(m){   // COR-03: 即消灯(respawn)+スパーク+報酬音
     st.cores++;
+    addScore('core', 0);   // SPEC-09e: 点は残コアとして最後に数える。コンボだけ伸びる
     SoundEngine.coreGet();
     sparksAt(m.position, .8);
     freeMesh(m);
@@ -2616,7 +2672,7 @@ const AsteroidRun = (()=>{
       const m = (it.kind === 'rock' ? asts : cores).find(q=>!q.userData.item);
       if(!m){ director.release(it.id); continue; }
       m.userData.item = it; it.mesh = m; m.visible = true;
-      if(it.kind === 'rock'){ m.userData.r = it.r; m.scale.setScalar(it.r); }
+      if(it.kind === 'rock'){ m.userData.r = it.r; m.scale.setScalar(it.r); m.userData.nm = false; }
       m.position.set(it.x, it.y, it.z);
     }
   }
@@ -2643,7 +2699,7 @@ const AsteroidRun = (()=>{
     if(IS_TOUCH){
       // SP: 短縮ラベル1行・キーボード案内(VIEW/LOCK)なしで視界を確保
       gameHud.innerHTML = `
-        <div class="ghud-row"><span class="glabel">S${secNo} DIST</span><span class="gval">${Math.floor(st.dist)}</span></div>
+        <div class="ghud-row"><span class="glabel">S${secNo} SC</span><span class="gval">${score().toLocaleString()}${st.mult > 1 ? ` <span class="gcombo">×${st.mult}</span>` : ''}</span></div>
         <div class="ghud-row"><span class="glabel">CORE</span><span class="gval"${warnCore}>${st.cores}${noCore ? '!' : ''}</span></div>
         <div class="ghud-row"><span class="gval shield"${warnShield}>${shieldIcons.trim()}</span></div>
         <button class="ghud-btn" id="g-sound">${SoundEngine.muted ? '♪ OFF' : '♪ ON'}</button>`;
@@ -2651,6 +2707,7 @@ const AsteroidRun = (()=>{
     }
     gameHud.innerHTML = `
       <div class="ghud-row"><span class="glabel">SECTOR</span><span class="gval">${secNo} // ${secName}</span></div>
+      <div class="ghud-row"><span class="glabel">SCORE</span><span class="gval">${score().toLocaleString()}${st.mult > 1 ? `<span class="gcombo">×${st.mult.toFixed(1)} COMBO ${st.combo}</span>` : ''}</span></div>
       <div class="ghud-row"><span class="glabel">DISTANCE</span><span class="gval">${Math.floor(st.dist)} Mkm</span></div>
       <div class="ghud-row"><span class="glabel">ENERGY CORE</span><span class="gval"${warnCore}>${st.cores} 個${noCore ? ' — NO CORE!' : ''}</span></div>
       <div class="ghud-row"><span class="glabel">SHIELD</span><span class="gval shield"${warnShield}>${shieldIcons}${st.shields <= 0 ? 'CRITICAL' : ''}</span></div>
@@ -2664,6 +2721,7 @@ const AsteroidRun = (()=>{
         <div class="gtitle">ASTEROID RUN</div>
         <p class="gdesc">小惑星帯を突破せよ。マウス(またはタッチ)で機体を操縦し、<br>
         岩塊を回避しながらエネルギーコア <span style="color:var(--cyan)">◆</span> を回収。<br>
+        <b>岩肌すれすれを抜けると NEAR MISS 加点</b> — 途切れず続けるほど倍率が上がる(最大×4)。<br>
         <b>${IS_TOUCH ? '右下のFIREボタン: 機関砲' : '左クリック: 機関砲'}</b> — コアを1つ消費して正面の小惑星を粉砕できる(初期コア2個)。<br>
         <b>40秒ごとにセクターが変わり</b>、岩の並びは険しく・速度は上がる — <b>シールドは3枚</b>しかない。<br>
         ${IS_TOUCH ? '視点は下のボタンで選んでから出撃。' : '視点は <b>Vキー</b>、自動ロックオンは <b>Lキー</b>、サウンドは <b>Mキー</b> / HUDボタンでいつでも切替できる。'}</p>
@@ -2672,6 +2730,7 @@ const AsteroidRun = (()=>{
           <div class="planet-chip vchip${view === 'chase' ? ' active' : ''}" data-v="chase">CHASE // 追跡視点</div>
         </div>
         <label class="gfs"><input type="checkbox" id="g-fs"${wantFS ? ' checked' : ''}><span>フルスクリーンでプレイ</span></label>
+        ${IS_TOUCH ? `<label class="gfs"><input type="checkbox" id="g-vibe"${localStorage.getItem('vg-vibe') !== '0' ? ' checked' : ''}><span>被弾時に振動</span></label>` : ''}
         <a class="btn" id="g-start">LAUNCH ▸</a>
       </div>`;
     gameOverlay.querySelectorAll('.vchip').forEach(ch=>ch.addEventListener('click', ()=>{
@@ -2679,7 +2738,10 @@ const AsteroidRun = (()=>{
       gameOverlay.querySelectorAll('.vchip').forEach(c2=>c2.classList.remove('active'));
       ch.classList.add('active');
     }));
-    document.getElementById('g-start').addEventListener('click', ()=>{ applyFSChoice(); start(); });
+    document.getElementById('g-start').addEventListener('click', ()=>{
+      const vb = document.getElementById('g-vibe');
+      if(vb) localStorage.setItem('vg-vibe', vb.checked ? '1' : '0');   // SPEC-09e
+      applyFSChoice(); start(); });
   }
   function start(){
     if(!R) build();
@@ -2688,7 +2750,11 @@ const AsteroidRun = (()=>{
     gameOverlay.innerHTML = '';
     document.body.classList.add('no-cursor');   // 飛行中はポインターを消す
     if(IS_TOUCH) gameLayer.classList.add('touch-fire');   // タッチ端末はFIREボタンを表示
-    st = {dist:0, cores:2, shields:3, speed:110, inv:0};   // 初期コア2個(機関砲の試射用)
+    st = {dist:0, cores:2, shields:3, speed:110, inv:0,   // 初期コア2個(機関砲の試射用)
+      // SPEC-09e: 積み上げ点・コンボ・ヒットストップ・FOVキック・内訳
+      score:0, combo:0, comboT:0, mult:1, maxCombo:0, hitStop:0, fovKick:0, nmFlash:0,
+      tally:{near:{n:0, pts:0}, kill:{n:0, pts:0}, core:{n:0}}};
+    document.getElementById('g-pop').innerHTML = '';
     shake = 0;
     lastFire = 0; noCoreUntil = 0;
     clearFx();
@@ -2710,6 +2776,8 @@ const AsteroidRun = (()=>{
   }
   function hit(now, m){
     st.shields--; st.inv = now + 1600;
+    st.combo = 0; st.mult = 1; st.hitStop = .08;   // SPEC-09e: コンボ切れ+ヒットストップ
+    buzz(70);
     SoundEngine.impact(st.shields <= 0);   // シールド切れ(CRITICAL)は警告ブザー付き
     glitchUntil = now + 300;                // 計器グリッチ(FX-06)
     sparksAt(m.position, 1.4);
@@ -2731,14 +2799,21 @@ const AsteroidRun = (()=>{
     SoundEngine.engineStop();
     SoundEngine.ui('over');
     document.body.classList.remove('no-cursor');
-    const score = Math.floor(st.dist*10 + st.cores*500);
-    const best = Math.max(score, +(localStorage.getItem('vg-ast-best')||0));
+    const total = score();   // SPEC-09e
+    const best = Math.max(total, +(localStorage.getItem('vg-ast-best')||0));
     localStorage.setItem('vg-ast-best', best);
     gameOverlay.innerHTML = `
       <div class="gscreen">
         <div class="gtitle" style="text-shadow:0 0 30px rgba(255,46,196,.7)">SHIP LOST</div>
-        <p class="gdesc">機体大破 — 航行距離 ${Math.floor(st.dist)} Mkm / 残コア ${st.cores} 個</p>
-        <div class="gscore">SCORE ${score}<small> / BEST ${best}</small></div>
+        <table class="gbreak">
+          <tr><td>到達セクター</td><td>${String(st.sector).padStart(2, '0')} // ${director.sector.name}</td><td></td></tr>
+          <tr><td>航行距離</td><td>${Math.floor(st.dist)} Mkm</td><td>${Math.floor(st.dist*10).toLocaleString()}</td></tr>
+          <tr><td>ニアミス</td><td>${st.tally.near.n} 回</td><td>${st.tally.near.pts.toLocaleString()}</td></tr>
+          <tr><td>撃破</td><td>${st.tally.kill.n} 個</td><td>${st.tally.kill.pts.toLocaleString()}</td></tr>
+          <tr><td>残コア</td><td>${st.cores} 個</td><td>${(st.cores*500).toLocaleString()}</td></tr>
+          <tr><td>最大コンボ</td><td>${st.maxCombo}</td><td></td></tr>
+        </table>
+        <div class="gscore">SCORE ${total.toLocaleString()}<small> / BEST ${best.toLocaleString()}</small></div>
         <div class="gbtns"><a class="btn" id="g-retry">RETRY ▸</a><a class="btn magenta" id="g-quit">EXIT</a></div>
       </div>`;
     document.getElementById('g-retry').addEventListener('click', start);
@@ -2753,11 +2828,15 @@ const AsteroidRun = (()=>{
     const rawMs = now - last;
     const dt = Math.min(.05, rawMs/1000); last = now;
     Quality.frame(rawMs);   // SPEC-06 PRF: フレーム時間監視
+    // SPEC-09e: ヒットストップ中は世界の時間(simDt)だけ止める。描画・揺れ・入力は実時間(dt)で続ける
+    const simDt = st.hitStop > 0 ? 0 : dt;
+    if(st.hitStop > 0) st.hitStop = Math.max(0, st.hitStop - dt);
+    stepCombo(simDt);
 
-    st.speed = Math.min(director.sector.cap, st.speed + dt*6);   // SPEC-09c: 上限はセクターごとに段階的に上がる
+    st.speed = Math.min(director.sector.cap, st.speed + simDt*6);   // SPEC-09c: 上限はセクターごとに段階的に上がる
     S.fog.density = Spawner.fogFor(st.speed);                     // 速いほど霧を薄く(視認時間 ≥0.7秒)
     SoundEngine.engineSpeed(st.speed);
-    st.dist += st.speed*dt*.05;
+    st.dist += st.speed*simDt*.05;
 
     const tx = mt.x*FX, ty = -mt.y*FY;
     ship.position.x += (tx - ship.position.x)*Math.min(1, dt*6);
@@ -2819,14 +2898,15 @@ const AsteroidRun = (()=>{
     }
     // 速度連動のFOVキック
     sm.fov += (72 + spdR*12 - sm.fov)*Math.min(1, dt*2);
-    C.fov = sm.fov;
+    st.fovKick = Math.max(0, st.fovKick - dt*10);   // SPEC-09e: ニアミスのFOVキック(+4°→0.4秒で戻る)
+    C.fov = sm.fov + st.fovKick;
     C.updateProjectionMatrix();
 
     const inv = now < st.inv;
     ship.visible = view === 'chase' && (!inv || Math.floor(now/90)%2 === 0);
 
     // 高速時のすり抜け(トンネリング)防止: フレーム移動量sdの区間内で最接近点のzを使って判定
-    const sd = st.speed*dt;
+    const sd = st.speed*simDt;
     const nearestDz = dzNow => {
       const dzPrev = dzNow - sd;
       if(dzPrev <= 0 && dzNow >= 0) return 0;
@@ -2834,7 +2914,7 @@ const AsteroidRun = (()=>{
     };
     // SPEC-09c: ディレクターが時間・セクター・生成・位置を進める(メッシュはその位置を写す)
     const released = [];
-    for(const e of director.step(dt, st.speed)){
+    for(const e of director.step(simDt, st.speed)){
       if(e.type === 'spawn') placeItems(e.items);
       else if(e.type === 'release'){ if(e.item.mesh) released.push(e.item); }
       else if(e.type === 'sector') onSector(e.sector);
@@ -2844,9 +2924,9 @@ const AsteroidRun = (()=>{
     for(const it of released) it.mesh.position.set(it.x, it.y, it.z);   // 通過した物も判定までは最終位置に置く
     for(const m of asts){
       if(!m.visible) continue;
-      m.rotation.x += m.userData.sx*dt;
-      m.rotation.y += m.userData.sy*dt;
-      m.rotation.z += m.userData.sz*dt;
+      m.rotation.x += m.userData.sx*simDt;
+      m.rotation.y += m.userData.sy*simDt;
+      m.rotation.z += m.userData.sz*simDt;
     }
     // 判定は解放より先(1フレームで z>26 まで抜けた岩も通過線分で判定する)
     if(!inv && !collide(now, sd)) return;
@@ -2871,6 +2951,8 @@ const AsteroidRun = (()=>{
     if(bgFx) bgFx.ring.rotation.z += dt*.01;
     // レティクルの色・透明度は常時固定(薄いシアン / opacity 0.12) — ロックは位置と拡縮のみで表現
 
+    dust.material.opacity = .45 + st.nmFlash*.4;   // SPEC-09e: ニアミスで流線を一瞬増光
+    st.nmFlash = Math.max(0, st.nmFlash - dt*3);
     const dp = dust.geometry.attributes.position.array;
     const stretch = 2 + st.speed*.08;   // 速度で流線が伸びる
     for(let i=0;i<LN;i++){
@@ -2882,11 +2964,60 @@ const AsteroidRun = (()=>{
     dust.geometry.attributes.position.needsUpdate = true;
 
     ++frame;
-    if(frame%6 === 0) hud();
+    if(frame%6 === 0){
+      hud();
+      // SPEC-09e: 音の強さ = セクターの進行 + 残シールドの少なさ + コンボ段階
+      SoundEngine.intensity(Math.min(1, (st.sector - 1)/5*.5 + (3 - Math.max(0, st.shields))/3*.3 + (st.mult - 1)/3*.2));
+    }
     if(view === 'cockpit' && frame%4 === 0) drawDash();
     stepShadows();   // SPEC-09d
     afterimage.uniforms['damp'].value = .68 + spdR*.2;   // 速度で残像(ブラー)強化
     composer.render();
+  }
+  // ===== SPEC-09e: スコア体系(ニアミス/撃破に倍率。距離点と残コアは倍率なし) =====
+  const NEAR = 2.5, COMBO_T = 4;
+  const COMBO_TIERS = [[35, 4], [20, 3], [10, 2], [5, 1.5], [0, 1]];
+  const multOf = n=>COMBO_TIERS.find(([k])=>n >= k)[1];
+  function score(){ return Math.floor(st.dist*10) + st.score + st.cores*500; }
+  function addScore(kind, base){
+    st.combo++; st.comboT = COMBO_T; st.maxCombo = Math.max(st.maxCombo, st.combo);
+    const m = multOf(st.combo);
+    if(m > st.mult) SoundEngine.combo([1.5, 2, 3, 4].indexOf(m));
+    st.mult = m;
+    const pts = Math.round(base*m), T = st.tally[kind];
+    st.score += pts; T.n++; if('pts' in T) T.pts += pts;
+    if(pts > 0) pop(kind === 'near' ? 'NEAR MISS' : 'DESTROYED', pts);
+    return pts;
+  }
+  function stepCombo(dt){ if(st.combo && (st.comboT -= dt) <= 0){ st.combo = 0; st.mult = 1; } }
+  function pop(label, pts){
+    const box = document.getElementById('g-pop'), el = document.createElement('div');
+    el.className = 'gpop';
+    el.textContent = `${label} +${pts.toLocaleString()}` + (st.mult > 1 ? `  ×${st.mult.toFixed(1)}` : '');
+    box.appendChild(el);
+    while(box.children.length > 3) box.firstChild.remove();
+    setTimeout(()=>el.remove(), 800);
+  }
+  function nearMiss(m){
+    m.userData.nm = true;
+    addScore('near', 150);
+    SoundEngine.whoosh(Math.sign(m.position.x - ship.position.x) || 1);
+    st.fovKick = 4; st.nmFlash = 1;
+  }
+  function destroyRock(m){   // 機関砲の撃破(大岩ほど高得点)
+    const r = m.userData.r;
+    boom(m.position.clone(), r, m.material);
+    SoundEngine.explosion(r);
+    addScore('kill', 100 + 40*r);
+    freeMesh(m);
+    shake = Math.min(1, shake + .25);   // 反動
+    st.hitStop = Math.max(st.hitStop, .04);
+  }
+  // SPEC-09e: 振動(タッチ端末のみ・設定でOFF可)。force はテスト用
+  function buzz(ms, force){
+    if(localStorage.getItem('vg-vibe') === '0') return;
+    if(!(IS_TOUCH || force) || !navigator.vibrate) return;
+    try{ navigator.vibrate(ms); }catch(e){}
   }
   // SPEC-09d: 影の有効/無効(切替時は材質のシェーダを作り直す)と、毎フレームの影カメラ追従・キャスター選択
   const SHADOW_CASTERS = 8, _kd = new THREE.Vector3();
@@ -2909,11 +3040,16 @@ const AsteroidRun = (()=>{
   }
   // SPEC-09a: 岩×機体4球の判定(移動線分の最接近点で測るのでトンネリングしない)。false=ゲーム終了
   const shipSph = Assets.SHIP_SPHERES.map(S=>({name:S.name, c:new THREE.Vector3(), r:S.r}));
-  function collide(now, sd){
+  function collide(now, sd, inv = false){
+    if(inv) return true;
     Assets.shipSpheresWorld(ship, shipSph);
+    const sz = ship.position.z;
     for(const m of asts){
       if(!m.visible || m.position.z < -60 || m.position.z - sd > 30) continue;   // 奥行きが離れた岩は判定不要(粗判定の手前で除外)
-      if(Assets.clearance(m, shipSph, sd) < 0){ hit(now, m); if(!playing) return false; }
+      const c = Assets.clearance(m, shipSph, sd);
+      if(c < 0){ hit(now, m); if(!playing) return false; continue; }
+      // SPEC-09e: ニアミス = 岩の中心が機体の奥行きを通過するフレームで、表面とのすき間が NEAR 以内(岩ごとに1回)
+      if(!m.userData.nm && c <= NEAR && m.position.z - sd <= sz && m.position.z >= sz) nearMiss(m);
     }
     return true;
   }
@@ -3102,6 +3238,8 @@ const AsteroidRun = (()=>{
       tick: (ms = 16)=>loop(last + ms),   // テスト用: rAFに依存せず1フレーム進める(非表示タブ対策)
       lookProbe, reticleProbe, reticle: ret, cores, grade, rig: gameRig,   // SPEC-09b
       get director(){ return director; },                                   // SPEC-09c
+      collideSd: (now, sd, inv)=>collide(now, sd, inv), addScore, stepCombo, score, destroyRock,   // SPEC-09e
+      buzz: ms=>buzz(ms, true), fov: ()=>C.fov, hud,
       collide: (now, measureOnly)=>{
         if(!measureOnly) return collide(now, 0);
         Assets.shipSpheresWorld(ship, shipSph);   // 性能計測用: 奥行きの除外なしで全岩を精査(最悪ケース)
@@ -3253,12 +3391,12 @@ const Guide = (()=>{
     flight: {num:'BRIEFING 02 / 05', title:'FLIGHT', sub:'操縦訓練', lines:[
       [.46, ()=>`機体は${pick('マウス','指')}に追従する。画面の行きたい場所へ${pick('カーソルを運べ','指を滑らせろ')}。`],
       [.52, ()=>'上下の機動は左右より機敏だ。縦の回避を恐れるな。'],
-      [.58, ()=>'訓練空域を抜ける。次は武装の説明だ。']]},
+      [.58, ()=>'岩肌をかすめて抜ければ NEAR MISS。途切れず続けば、得点の倍率は最大×4まで上がる。']]},
     weapons: {num:'BRIEFING 03 / 05', title:'WEAPONS', sub:'武装と資源', lines:[
       [.1,  ()=>'◆エネルギーコア。回収すればスコア×500。だが本当の価値は弾薬であることだ。'],
       [.54, ()=>`${pick('左クリック','FIREボタン')}で機関砲。コアを1つ消費し、正面の岩を撃ち砕く。`],
       [.6,  ()=>'照準は自動でロックする。囲まれたものは、壊せるものだ。'],
-      [.68, ()=>'空撃ちはコアを消費しない。残弾ゼロの警告「NO CORE」を見逃すな。']]},
+      [.68, ()=>'空撃ちはコアを消費しない。残弾ゼロの警告「NO CORE」を見逃すな。大きな岩ほど撃破点は高い。']]},
     survival: {num:'BRIEFING 04 / 05', title:'SURVIVAL', sub:'生存規定', lines:[
       [.48, ()=>'— 今、お前は岩に触れた。シールドは3枚。衝突を3度だけ肩代わりする。'],
       [.55, ()=>'砕けるたび、船体は裸に近づく。速度も20%失われる。'],
