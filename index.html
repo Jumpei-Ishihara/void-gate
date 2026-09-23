@@ -349,6 +349,18 @@ body.no-cursor #cursor{
   padding:10px 22px;transition:all .3s;
 }
 #game-exit:hover{color:#fff;border-color:var(--magenta);box-shadow:0 0 18px rgba(255,46,196,.4)}
+/* SPEC-09c: セクター遷移バナー / 彗星の予兆(進入側の画面端) */
+#g-sector{position:absolute;top:18%;left:50%;transform:translateX(-50%);z-index:4;pointer-events:none;
+  font-family:'Orbitron',sans-serif;font-size:clamp(14px,2.2vw,22px);letter-spacing:.32em;color:#fff;white-space:nowrap;
+  text-shadow:0 0 18px var(--cyan);opacity:0}
+#g-sector small{display:block;margin-top:8px;font-size:.55em;letter-spacing:.4em;color:var(--cyan);text-align:center}
+#g-sector.show{animation:gsector 2.4s ease-out forwards}
+@keyframes gsector{0%{opacity:0;transform:translate(-50%,8px)}12%{opacity:1;transform:translate(-50%,0)}75%{opacity:1}100%{opacity:0}}
+#g-warn{position:absolute;top:0;bottom:0;width:18vw;z-index:3;pointer-events:none;opacity:0}
+#g-warn.left{left:0;background:linear-gradient(90deg,rgba(255,46,196,.45),transparent)}
+#g-warn.right{right:0;background:linear-gradient(270deg,rgba(255,46,196,.45),transparent)}
+#g-warn.show{animation:gwarn 1.5s steps(1) forwards}
+@keyframes gwarn{0%,33%,66%{opacity:1}16%,50%,83%{opacity:.15}100%{opacity:0}}
 #game-hud{
   position:absolute;top:20px;left:24px;z-index:4;
   font-family:'Orbitron',sans-serif;color:var(--cyan);
@@ -587,6 +599,8 @@ body.no-cursor #cursor{
   <canvas id="game-canvas" aria-hidden="true"></canvas>
   <div id="cockpit-vign"></div>
   <div id="game-hud"></div>
+  <div id="g-sector" aria-live="polite"></div>
+  <div id="g-warn" aria-hidden="true"></div>
   <div id="game-overlay"></div>
   <button id="game-exit">EXIT ✕</button>
   <button id="fire-btn">FIRE</button>
@@ -1207,6 +1221,19 @@ const SoundEngine = (()=>{
     [523, 659, 784].forEach((f, i)=>tone(v, 'sine', f, f, .14, .3, i*.06));   // 上昇アルペジオ(AUD-06)
     env(v.g, t0, .45, .32);
   }
+  // SPEC-09c: セクター遷移(上昇2音) / 彗星の予兆(短い3連の警告音)
+  function sector(){
+    ensure(); test.lastSfx = {type:'sector'}; if(!ctx) return;
+    const t0 = ctx.currentTime, v = voice(.5);
+    tone(v, 'triangle', 392, 392, .18, .35); tone(v, 'triangle', 784, 784, .3, .35, .16);
+    env(v.g, t0, .4, .5);
+  }
+  function warn(){
+    ensure(); test.lastSfx = {type:'warn'}; if(!ctx) return;
+    const t0 = ctx.currentTime, v = voice(.5);
+    [0, .15, .3].forEach(d=>tone(v, 'square', 1180, 1180, .08, .18, d));
+    env(v.g, t0, .3, .5);
+  }
   function ui(kind){
     ensure(); test.lastSfx = {type:'ui:'+kind}; if(!ctx) return;
     const t0 = ctx.currentTime;
@@ -1262,7 +1289,7 @@ const SoundEngine = (()=>{
       engineFreq: engine ? engine.o1.frequency.value : 0,
       masterGain: master ? master.gain.value : -1, lastSfx: test.lastSfx};
   }
-  return {ensure, gun, explosion, impact, coreGet, ui,
+  return {ensure, gun, explosion, impact, coreGet, ui, sector, warn,
           engineStart, engineSpeed, enginePause, engineStop,
           setMute, toggleMute, stopAll, _test, get muted(){ return muted; }};
 })();
@@ -1523,6 +1550,263 @@ const Assets = (()=>{
           rockHull, SHIP_SPHERES, HIT_LENIENCY, shipSpheresWorld, clearance};
 })();
 
+/* ---------- SPEC-09c: パターンスポナー + 公平性検証 + セクター制(純粋ロジック・Three.js非依存) ---------- */
+const Spawner = (()=>{
+  const FX = 46, FY = 34;                       // 機体の到達範囲(ゲームと同値)
+  const KMAX = 1.4;                             // 岩の外接半径係数(RadialHull.max ≤ 1.372 の安全側)
+  const SHIP_HX = 3.9, SHIP_HY = 1.6, SHIP_HL = 2.6;   // 機体4球の外形(半幅/半高/半長)+余裕
+  // 公平性検証で仮定する横/縦の移動速度。機体は目標へ毎秒6(縦8)の指数追従で、端から端への初速は 500u/s を超える。
+  // その半分未満(90/108)を仮定して安全側に取る(実測に基づき SPEC-09c の初期値 45 から改訂)
+  const V_LAT = 90, V_LAT_Y = 108;
+  const CELL = 2, GX = Math.floor(FX*2/CELL) + 1, GY = Math.floor(FY*2/CELL) + 1;
+  const SPAWN_Z = -900, SECTOR_T = 40, BREATHER = 1.2, GAP_T = .35, WARN_T = 1.5;   // GAP_T: 実測の密度から .9→.35 に改訂
+  const POOL = 46, CORE_POOL = 6;
+
+  function rng(seed){   // mulberry32
+    let a = seed >>> 0;
+    return ()=>{ a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0)/4294967296; };
+  }
+  const rr = (r, a, b)=>a + r()*(b - a);
+  const sgn = r=>r() < .5 ? -1 : 1;
+
+  const ALL = {SCATTER:1, BIG_ONE:1, WALL_GAP:1, SLALOM:1, TUNNEL:1, DRIFT:1, COMET_STREAM:1, CORE_LINE:1};
+  const SECTORS = [
+    {n:1, name:'OUTER BELT',   cap:220, w:{SCATTER:70, BIG_ONE:15, CORE_LINE:15},                  r:[2, 8],   dens:1},
+    {n:2, name:'DEBRIS FIELD', cap:300, w:{SCATTER:30, DRIFT:40, WALL_GAP:15, CORE_LINE:15},       r:[1.5, 5], dens:1},
+    {n:3, name:'DENSE CORE',   cap:380, w:{WALL_GAP:30, TUNNEL:30, SLALOM:25, CORE_LINE:15},       r:[3, 10],  dens:1},
+    {n:4, name:'COMET STREAM', cap:460, w:{COMET_STREAM:35, SCATTER:25, SLALOM:25, CORE_LINE:15},  r:[1.5, 8], dens:1}];
+  function sectorAt(t){
+    const n = 1 + Math.floor(Math.max(0, t)/SECTOR_T);
+    if(n <= 4) return SECTORS[n-1];
+    return {n, name:'VOID RUN', cap: Math.min(640, 460 + 40*(n - 4)), w: ALL, r:[1.5, 12], dens: Math.min(1.5, 1 + .1*(n - 4))};
+  }
+  // 霧: 速いほど薄く(透過率30%の距離÷速度 ≥ 0.7秒, F3-13)
+  const fogFor = v=>.0026 - .0008*Math.min(1, Math.max(0, (v - 110)/530));
+
+  const rock = (x, y, dz, r, vx = 0, vy = 0)=>({kind:'rock', x, y, dz, r, vx, vy});
+  const core = (x, y, dz)=>({kind:'core', x, y, dz, r:1.6, vx:0, vy:0});
+  const radius = (g, c)=>c.sector.r[0] + (c.sector.r[1] - c.sector.r[0])*Math.pow(g(), 1.5);   // 小さめに偏らせる
+
+  const PAT = {
+    SCATTER(g, c){
+      const n = Math.round(12*c.sector.dens), L = 300, it = [];
+      for(let i = 0; i < n; i++) it.push(rock(rr(g, -FX*1.2, FX*1.2), rr(g, -FY*1.2, FY*1.2), g()*L, radius(g, c)));
+      if(g() < .3) it.push(core(rr(g, -FX*.8, FX*.8), rr(g, -FY*.8, FY*.8), g()*L));
+      return {name:'SCATTER', length:L, items:it};
+    },
+    BIG_ONE(g, c){
+      const bx = rr(g, -FX*.5, FX*.5), by = rr(g, -FY*.5, FY*.5), it = [rock(bx, by, 20, rr(g, 10, 14))];
+      const n = 3 + Math.floor(g()*3);
+      for(let i = 0; i < n; i++){ const a = g()*6.283, d = rr(g, 20, 30);
+        it.push(rock(bx + Math.cos(a)*d, by + Math.sin(a)*d, rr(g, 0, 60), rr(g, 1.5, 3.5))); }
+      return {name:'BIG_ONE', length:120, items:it};
+    },
+    // 視界全体を覆う大岩の壁に穴が1つ(穴は中央寄り)
+    WALL_GAP(g, c){
+      const hx = rr(g, -FX*.45, FX*.45), hy = rr(g, -FY*.45, FY*.45), hole = 11, it = [];
+      for(let i = 0; i < 5; i++) for(let j = 0; j < 4; j++){   // 端(±FX/±FY)まで均等に敷き詰める(大岩20個)
+        const px = -FX + i*FX*2/4 + rr(g, -1.5, 1.5), py = -FY + j*FY*2/3 + rr(g, -1.5, 1.5), r = rr(g, 8.5, 10);
+        if(Math.hypot(px - hx, py - hy) < hole + r*KMAX) continue;
+        it.push(rock(px, py, rr(g, 0, 6), r));
+      }
+      it.push(core(hx, hy, 3));
+      return {name:'WALL_GAP', length:40, items:it};
+    },
+    // 左右半分を交互に塞ぐ壁(速いほど壁の間隔が広い)
+    SLALOM(g, c){
+      const gap = Math.max(90, c.speed*44/V_LAT*1.25), it = [];
+      let side = sgn(g);
+      for(let w = 0; w < 3; w++, side = -side){
+        for(let x = 0; x < 2; x++) for(let y = 0; y < 4; y++){   // 片側半分を塞ぐ壁(大岩8個)
+          const px = side*(-FX + x*20), py = -FY + 4 + y*20 + rr(g, -2, 2);
+          it.push(rock(px, py, w*gap + rr(g, 0, 6), rr(g, 8, 9.5)));
+        }
+      }
+      return {name:'SLALOM', length:gap*2 + 20, items:it};
+    },
+    // うねる中心線を囲む岩の輪(うねりの速さは速度で制限)
+    TUNNEL(g, c){
+      const lam = 150, ph = g()*6.283, ph2 = g()*6.283;
+      const A = Math.min(22, V_LAT*lam/c.speed*.7), B = Math.min(12, V_LAT_Y*lam*1.3/c.speed*.7);
+      const cx0 = rr(g, -FX*.3, FX*.3), cy0 = rr(g, -FY*.3, FY*.3), it = [];
+      for(let k = 0; k < 5; k++){
+        const dz = k*50, cx = cx0 + A*Math.sin(dz/lam + ph), cy = cy0 + B*Math.sin(dz/(lam*1.3) + ph2);
+        for(let j = 0; j < 5; j++){ const a = j/5*6.283 + k*.6, r = rr(g, 4, 5.2), d = 13 + r*KMAX;
+          it.push(rock(cx + Math.cos(a)*d, cy + Math.sin(a)*d, dz + rr(g, 0, 4), r)); }
+        if(k === 2 || k === 4) it.push(core(cx, cy, dz + 20));
+      }
+      return {name:'TUNNEL', length:4*50 + 10, items:it};
+    },
+    DRIFT(g, c){
+      const n = Math.round(10*c.sector.dens), L = 300, it = [];
+      for(let i = 0; i < n; i++) it.push(rock(rr(g, -FX*1.3, FX*1.3), rr(g, -FY*1.1, FY*1.1), g()*L,
+        radius(g, c), sgn(g)*rr(g, 6, 14), rr(g, -3, 3)));
+      return {name:'DRIFT', length:L, items:it};
+    },
+    // 帯状に横切る彗星流: 各岩は機体の奥行きに届く瞬間に帯の上を横一列に並ぶ(上下へ逃げる)
+    COMET_STREAM(g, c){
+      const dir = sgn(g), band = rr(g, -FY*.55, FY*.55), n = 12, it = [];
+      const lead = Math.max(0, c.speed*(WARN_T + .25) + SPAWN_Z);   // 予兆1.5秒を確保する先頭の奥行き
+      for(let i = 0; i < n; i++){
+        const dz = lead + i*14 + rr(g, 0, 6), vx = dir*rr(g, 40, 60);
+        const tA = (-SPAWN_Z + dz)/c.speed, xc = -FX*1.1 + (i + .5)/n*FX*2.2;
+        it.push(rock(xc - vx*tA, band + rr(g, -3, 3), dz, rr(g, 1.5, 2.5), vx, 0));
+      }
+      return {name:'COMET_STREAM', length: lead + n*14 + 10, items:it, warn:{dir}};
+    },
+    // コアの列が経路を誘導する(両脇に岩)
+    CORE_LINE(g, c){
+      const sx = rr(g, -FX*.6, FX*.6), sy = rr(g, -FY*.6, FY*.6), ex = sx + rr(g, -18, 18), ey = sy + rr(g, -12, 12);
+      const n = 3 + Math.floor(g()*3), it = [];
+      for(let i = 0; i < n; i++){ const k = i/(n - 1); it.push(core(sx + (ex - sx)*k, sy + (ey - sy)*k, i*40)); }
+      for(let i = 0; i < 4; i++){ const k = g(), s = sgn(g);
+        it.push(rock(sx + (ex - sx)*k + s*rr(g, 13, 20), sy + (ey - sy)*k + rr(g, -6, 6), k*(n - 1)*40, rr(g, 2, 4))); }
+      return {name:'CORE_LINE', length:(n - 1)*40 + 20, items:it};
+    }
+  };
+  const PATTERNS = Object.keys(PAT);
+  // 代替: 直線の通路を予約したばら撒き(静止岩のみ・構造上必ず合格)
+  function safe(g, c){
+    const cx = rr(g, -FX*.5, FX*.5), cy = rr(g, -FY*.5, FY*.5), L = 240, it = [];
+    for(let i = 0; i < 16 && it.length < 8; i++){
+      const x = rr(g, -FX*1.2, FX*1.2), y = rr(g, -FY*1.2, FY*1.2), r = radius(g, c), R = r*KMAX;
+      if(((x - cx)/(R + SHIP_HX + CELL*2))**2 + ((y - cy)/(R + SHIP_HY + CELL*2))**2 < 1) continue;
+      it.push(rock(x, y, g()*L, r));
+    }
+    return {name:'SAFE', length:L, items:it, fallback:true};
+  }
+  const make = (name, g, c)=>PAT[name](g, c);
+
+  // ===== 公平性検証: 各岩が「機体の奥行きに届く瞬間の位置」で断面を作り、横移動で繋がる空きセルの経路を探す =====
+  const free = new Uint8Array(GX*GY), reach = new Uint8Array(GX*GY), tmp = new Uint8Array(GX*GY);
+  function dilate(src, rx, ry){
+    if(rx >= GX && ry >= GY){ let any = 0; for(let i = 0; i < src.length; i++) any |= src[i]; src.fill(any); return; }
+    for(let y = 0; y < GY; y++){ let last = -1e9;                 // 横方向: 左→右 / 右→左 の最寄り距離
+      for(let x = 0; x < GX; x++){ if(src[y*GX + x]) last = x; tmp[y*GX + x] = x - last <= rx ? 1 : 0; }
+      last = 1e9;
+      for(let x = GX - 1; x >= 0; x--){ if(src[y*GX + x]) last = x; if(last - x <= rx) tmp[y*GX + x] = 1; } }
+    for(let x = 0; x < GX; x++){ let last = -1e9;                 // 縦方向
+      for(let y = 0; y < GY; y++){ if(tmp[y*GX + x]) last = y; src[y*GX + x] = y - last <= ry ? 1 : 0; }
+      last = 1e9;
+      for(let y = GY - 1; y >= 0; y--){ if(tmp[y*GX + x]) last = y; if(last - y <= ry) src[y*GX + x] = 1; } }
+  }
+  function validate(p, speed){
+    const rocks = p.items.filter(i=>i.kind === 'rock').map(i=>{
+      const vx = i.vx || 0, vy = i.vy || 0;   // 速度の省略は静止扱い(NaNで岩が消えないように)
+      const tA = (-SPAWN_Z + i.dz)/speed, R = i.r*KMAX, dtO = (2*R + 2*SHIP_HL)/speed;   // 奥行きが重なる時間
+      return {x: i.x + vx*tA, y: i.y + vy*tA, dz: i.dz, span: R + SHIP_HL,
+        ax: R + SHIP_HX + Math.abs(vx)*dtO*.5, ay: R + SHIP_HY + Math.abs(vy)*dtO*.5};
+    });
+    if(!rocks.length) return true;
+    const depths = [...new Set(rocks.map(r=>Math.round(r.dz)))].sort((a, b)=>a - b);
+    let prev = null;
+    for(const d of depths){
+      free.fill(1);
+      for(const r of rocks){
+        if(Math.abs(r.dz - d) >= r.span) continue;
+        const x0 = Math.max(0, Math.ceil((r.x - r.ax + FX)/CELL)), x1 = Math.min(GX - 1, Math.floor((r.x + r.ax + FX)/CELL));
+        const y0 = Math.max(0, Math.ceil((r.y - r.ay + FY)/CELL)), y1 = Math.min(GY - 1, Math.floor((r.y + r.ay + FY)/CELL));
+        for(let y = y0; y <= y1; y++){ const py = (y*CELL - FY - r.y)/r.ay;
+          for(let x = x0; x <= x1; x++){ const px = (x*CELL - FX - r.x)/r.ax; if(px*px + py*py < 1) free[y*GX + x] = 0; } }
+      }
+      if(prev === null) reach.set(free);
+      else {
+        const dt = (d - prev)/speed;
+        dilate(reach, Math.floor(V_LAT*dt/CELL), Math.floor(V_LAT_Y*dt/CELL));
+        for(let i = 0; i < reach.length; i++) reach[i] &= free[i];
+      }
+      let any = 0; for(let i = 0; i < reach.length; i++) if(reach[i]){ any = 1; break; }
+      if(!any) return false;
+      prev = d;
+    }
+    return true;
+  }
+  function generate(name, g, c){
+    for(let k = 0; k < 5; k++){ const p = PAT[name](g, c); if(validate(p, c.speed)) return p; }
+    return safe(g, c);
+  }
+  function pick(g, w){
+    let sum = 0; for(const k in w) sum += w[k];
+    let x = g()*sum; for(const k in w){ x -= w[k]; if(x <= 0) return k; }
+    return Object.keys(w)[0];
+  }
+  function create(seed){
+    const g = rng(seed);
+    return {next: c=>generate(pick(g, c.sector.w), g, c)};
+  }
+
+  // ===== ディレクター: 時間・セクター・生成カーソル・アイテム位置の唯一の管理者(ゲームはメッシュに写すだけ) =====
+  function director(seed){
+    const sp = create(seed);
+    const d = {t:0, sector: sectorAt(0), cursor:0, breather:0, items:[], log:[], warns:[], lastEndZ:null, nextId:1};
+    function place(p, zStart, speed){
+      let nr = d.items.filter(i=>i.kind === 'rock').length, nc = d.items.length - nr, truncated = 0;
+      const placed = [];
+      for(const it of p.items){
+        if(it.kind === 'rock'){ if(nr >= POOL){ truncated++; continue; } nr++; }
+        else { if(nc >= CORE_POOL){ truncated++; continue; } nc++; }
+        const o = {id: d.nextId++, kind: it.kind, x: it.x, y: it.y, z: zStart - it.dz, r: it.r, vx: it.vx, vy: it.vy, pattern: p.name};
+        d.items.push(o); placed.push(o);
+      }
+      d.log.push({t: d.t, name: p.name, speed, truncated, zStart, zEnd: zStart - p.length,
+        gapFromPrev: d.lastEndZ === null ? Infinity : d.lastEndZ - zStart});
+      d.lastEndZ = zStart - p.length;
+      if(p.warn) d.warns.push({dir: p.warn.dir, ids: new Set(placed.filter(i=>i.kind === 'rock').map(i=>i.id)), warned:false});
+      return placed;
+    }
+    d.prefill = speed=>{   // 開始時: 手前 -120 から生成位置まで埋める
+      let z = -120;
+      while(z > SPAWN_Z){ const p = sp.next({sector: d.sector, speed}); place(p, z, speed); z -= p.length + speed*GAP_T; }
+      d.cursor = SPAWN_Z - z;
+    };
+    d.step = (dt, speed)=>{
+      const ev = [];
+      d.t += dt;
+      const sec = sectorAt(d.t);
+      if(sec.n !== d.sector.n){ d.sector = sec; d.breather = BREATHER; ev.push({type:'sector', sector: sec}); }
+      const dzs = speed*dt;
+      if(d.lastEndZ !== null) d.lastEndZ += dzs;
+      const keep = [];
+      for(const i of d.items){
+        i.z += dzs; i.x += i.vx*dt; i.y += i.vy*dt;
+        if(i.z > 26) ev.push({type:'release', item: i}); else keep.push(i);
+      }
+      d.items = keep;
+      for(const w of d.warns){
+        if(w.warned) continue;
+        let lead = -Infinity;
+        for(const i of d.items) if(w.ids.has(i.id) && i.z > lead) lead = i.z;
+        if(lead === -Infinity){ w.warned = true; continue; }
+        const eta = -lead/speed;
+        if(eta <= WARN_T){ w.warned = true; ev.push({type:'warn', dir: w.dir, eta}); }
+      }
+      d.warns = d.warns.filter(w=>!w.warned);
+      if(d.breather > 0) d.breather -= dt;            // ひと息: 生成カーソルを止める
+      else {
+        d.cursor -= dzs;
+        while(d.cursor <= 0){
+          // プールに収まらないパターンは切り詰めず、空きが出るまで待つ(壁などの形を壊さない)。
+          // 1.5秒待っても収まらない場合のみ切り詰めて置く
+          if(!d.pending) d.pending = {p: sp.next({sector: d.sector, speed}), since: d.t};
+          const p = d.pending.p, needR = p.items.filter(i=>i.kind === 'rock').length;
+          const freeR = POOL - d.items.filter(i=>i.kind === 'rock').length;
+          if(needR > freeR && d.t - d.pending.since < 1.5) break;
+          d.pending = null;
+          const items = place(p, SPAWN_Z - Math.max(d.cursor, -speed*dt), speed);
+          d.cursor = Math.max(d.cursor, 0) + p.length + speed*GAP_T;
+          ev.push({type:'spawn', items, name: p.name});
+        }
+      }
+      return ev;
+    };
+    d.release = id=>{ d.items = d.items.filter(i=>i.id !== id); };
+    return d;
+  }
+  return {CONST:{FX, FY, KMAX, SPAWN_Z, SECTOR_T, BREATHER, GAP_T, WARN_T, POOL, CORE_POOL, V_LAT, V_LAT_Y},
+          rng, SECTORS, sectorAt, fogFor, PATTERNS, make, validate, generate, create, director};
+})();
+
 /* ---------- GAME 1: ASTEROID RUN(探査開始) ---------- */
 const AsteroidRun = (()=>{
   let R, S, C, ship, dust;
@@ -1542,6 +1826,7 @@ const AsteroidRun = (()=>{
   let glitchUntil = 0;                  // SPEC-04 FX-06: 被弾時の計器グリッチ終了時刻
 
   const asts = [], cores = [];
+  let director = null;   // SPEC-09c
   let raf = 0, playing = false, last = 0, frame = 0, st = null;
   const mt = {x:0, y:0};
   const sm = {x:0, y:0, roll:0, pitch:0, fov:72};   // 慣性付きカメラ状態
@@ -1953,6 +2238,7 @@ const AsteroidRun = (()=>{
     // 正面の照準コーン内で最も手前の小惑星(narrow=自動ロックオン用の狭いコーン、通常の約半分)
     let best = null, bestZ = -1e9;
     for(const m of asts){
+      if(!m.visible) continue;
       const dz = m.position.z - ship.position.z;
       if(dz > -12 || dz < -480) continue;
       const dx = m.position.x - ship.position.x, dy = m.position.y - ship.position.y;
@@ -2174,7 +2460,7 @@ const AsteroidRun = (()=>{
       st.cores--;
       boom(tgt.position.clone(), tgt.userData.r, tgt.material);
       SoundEngine.explosion(tgt.userData.r);
-      respawn(tgt, true);
+      freeMesh(tgt);
       shake = Math.min(1, shake + .25);   // 反動
       hud();
     }
@@ -2207,27 +2493,56 @@ const AsteroidRun = (()=>{
     st.cores++;
     SoundEngine.coreGet();
     sparksAt(m.position, .8);
-    respawn(m, true);
+    freeMesh(m);
     hud();
   }
-  function respawn(m, far){
-    m.position.set((Math.random()-.5)*FX*2.4, (Math.random()-.5)*FY*2.4, far ? -(400+Math.random()*600) : -(80+Math.random()*920));
+  // SPEC-09c: 配置はディレクター(Spawner.director)が管理し、メッシュはその位置を写すだけ
+  function hideMesh(m){ m.userData.item = null; m.visible = false; m.position.set(0, 0, 1e5); }
+  function freeMesh(m){   // 被弾・撃破・回収で消えた物をディレクターからも外す
+    const it = m.userData.item;
+    if(it){ if(director) director.release(it.id); it.mesh = null; }
+    hideMesh(m);
+  }
+  function placeItems(items){
+    for(const it of items){
+      const m = (it.kind === 'rock' ? asts : cores).find(q=>!q.userData.item);
+      if(!m){ director.release(it.id); continue; }
+      m.userData.item = it; it.mesh = m; m.visible = true;
+      if(it.kind === 'rock'){ m.userData.r = it.r; m.scale.setScalar(it.r); }
+      m.position.set(it.x, it.y, it.z);
+    }
+  }
+  function onSector(sec){
+    st.sector = sec.n;
+    const b = document.getElementById('g-sector');
+    b.innerHTML = `SECTOR ${String(sec.n).padStart(2, '0')}<small>${sec.name}</small>`;
+    b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
+    SoundEngine.sector();
+    hud();
+  }
+  function onWarn(dir){   // dir>0: 左から右へ横切る → 進入側(左)の端を点滅
+    const w = document.getElementById('g-warn');
+    w.className = dir > 0 ? 'left' : 'right'; void w.offsetWidth; w.classList.add('show');
+    SoundEngine.warn();
   }
   function hud(){
     const noCore = performance.now() < noCoreUntil;
     const warnCore = noCore ? ' style="color:var(--magenta);text-shadow:0 0 10px var(--magenta)"' : '';
     const warnShield = st.shields <= 0 ? ' style="color:var(--magenta);text-shadow:0 0 10px var(--magenta)"' : '';
     const shieldIcons = '◆ '.repeat(Math.max(0,st.shields)) + '◇ '.repeat(3-Math.max(0,st.shields));
+    const sec = director ? director.sector : Spawner.sectorAt(0);   // SPEC-09c
+    const secNo = String(sec.n).padStart(2, '0'), secName = sec.name;
     if(IS_TOUCH){
       // SP: 短縮ラベル1行・キーボード案内(VIEW/LOCK)なしで視界を確保
       gameHud.innerHTML = `
-        <div class="ghud-row"><span class="glabel">DIST</span><span class="gval">${Math.floor(st.dist)}</span></div>
+        <div class="ghud-row"><span class="glabel">S${secNo} DIST</span><span class="gval">${Math.floor(st.dist)}</span></div>
         <div class="ghud-row"><span class="glabel">CORE</span><span class="gval"${warnCore}>${st.cores}${noCore ? '!' : ''}</span></div>
         <div class="ghud-row"><span class="gval shield"${warnShield}>${shieldIcons.trim()}</span></div>
         <button class="ghud-btn" id="g-sound">${SoundEngine.muted ? '♪ OFF' : '♪ ON'}</button>`;
       return;
     }
     gameHud.innerHTML = `
+      <div class="ghud-row"><span class="glabel">SECTOR</span><span class="gval">${secNo} // ${secName}</span></div>
       <div class="ghud-row"><span class="glabel">DISTANCE</span><span class="gval">${Math.floor(st.dist)} Mkm</span></div>
       <div class="ghud-row"><span class="glabel">ENERGY CORE</span><span class="gval"${warnCore}>${st.cores} 個${noCore ? ' — NO CORE!' : ''}</span></div>
       <div class="ghud-row"><span class="glabel">SHIELD</span><span class="gval shield"${warnShield}>${shieldIcons}${st.shields <= 0 ? 'CRITICAL' : ''}</span></div>
@@ -2242,7 +2557,7 @@ const AsteroidRun = (()=>{
         <p class="gdesc">小惑星帯を突破せよ。マウス(またはタッチ)で機体を操縦し、<br>
         岩塊を回避しながらエネルギーコア <span style="color:var(--cyan)">◆</span> を回収。<br>
         <b>${IS_TOUCH ? '右下のFIREボタン: 機関砲' : '左クリック: 機関砲'}</b> — コアを1つ消費して正面の小惑星を粉砕できる(初期コア2個)。<br>
-        速度は時間とともに上昇 — <b>シールドは3枚</b>しかない。<br>
+        <b>40秒ごとにセクターが変わり</b>、岩の並びは険しく・速度は上がる — <b>シールドは3枚</b>しかない。<br>
         ${IS_TOUCH ? '視点は下のボタンで選んでから出撃。' : '視点は <b>Vキー</b>、自動ロックオンは <b>Lキー</b>、サウンドは <b>Mキー</b> / HUDボタンでいつでも切替できる。'}</p>
         <div class="gview-pick">
           <div class="planet-chip vchip${view === 'cockpit' ? ' active' : ''}" data-v="cockpit">COCKPIT // 操縦席視点</div>
@@ -2271,8 +2586,13 @@ const AsteroidRun = (()=>{
     clearFx();
     ship.position.set(0, 0, 0);
     mt.x = 0; mt.y = 0;
-    asts.forEach(m=>respawn(m, false));
-    cores.forEach(m=>respawn(m, true));
+    // SPEC-09c: シード付きディレクターで配置(通常モードのシードは毎回ランダム。F7でデイリーを追加)
+    asts.forEach(hideMesh); cores.forEach(hideMesh);
+    director = Spawner.director((Math.random()*4294967296) >>> 0);
+    director.prefill(110);
+    placeItems(director.items);
+    st.sector = 1;
+    const sb = document.getElementById('g-sector'); sb.classList.remove('show');
     SoundEngine.engineStart();
     Quality.reset();   // リトライごとに品質を再評価(セッション内は下がる一方, PRF-05)
     playing = true; last = performance.now();
@@ -2287,7 +2607,7 @@ const AsteroidRun = (()=>{
     sparksAt(m.position, 1.4);
     st.speed = Math.max(110, st.speed*.8);   // 衝撃で減速 → 既存の加速度で再加速
     shake = 1.3;
-    respawn(m, true);
+    freeMesh(m);
     gameLayer.classList.add('ghit');
     setTimeout(()=>gameLayer.classList.remove('ghit'), 240);
     // 画面全体の小刻み振動(再トリガー対応)
@@ -2326,7 +2646,8 @@ const AsteroidRun = (()=>{
     const dt = Math.min(.05, rawMs/1000); last = now;
     Quality.frame(rawMs);   // SPEC-06 PRF: フレーム時間監視
 
-    st.speed = Math.min(SPD_MAX, st.speed + dt*6);
+    st.speed = Math.min(director.sector.cap, st.speed + dt*6);   // SPEC-09c: 上限はセクターごとに段階的に上がる
+    S.fog.density = Spawner.fogFor(st.speed);                     // 速いほど霧を薄く(視認時間 ≥0.7秒)
     SoundEngine.engineSpeed(st.speed);
     st.dist += st.speed*dt*.05;
 
@@ -2403,19 +2724,28 @@ const AsteroidRun = (()=>{
       if(dzPrev <= 0 && dzNow >= 0) return 0;
       return Math.abs(dzNow) < Math.abs(dzPrev) ? dzNow : dzPrev;
     };
+    // SPEC-09c: ディレクターが時間・セクター・生成・位置を進める(メッシュはその位置を写す)
+    const released = [];
+    for(const e of director.step(dt, st.speed)){
+      if(e.type === 'spawn') placeItems(e.items);
+      else if(e.type === 'release'){ if(e.item.mesh) released.push(e.item); }
+      else if(e.type === 'sector') onSector(e.sector);
+      else if(e.type === 'warn') onWarn(e.dir);
+    }
+    for(const it of director.items) if(it.mesh) it.mesh.position.set(it.x, it.y, it.z);
+    for(const it of released) it.mesh.position.set(it.x, it.y, it.z);   // 通過した物も判定までは最終位置に置く
     for(const m of asts){
-      m.position.z += sd;
+      if(!m.visible) continue;
       m.rotation.x += m.userData.sx*dt;
       m.rotation.y += m.userData.sy*dt;
       m.rotation.z += m.userData.sz*dt;
     }
-    // 判定は再配置より先(1フレームで z>26 まで抜けた岩も通過線分で判定する)
+    // 判定は解放より先(1フレームで z>26 まで抜けた岩も通過線分で判定する)
     if(!inv && !collide(now, sd)) return;
-    for(const m of asts) if(m.position.z > 26) respawn(m, true);
+    for(const it of released){ if(it.mesh){ const m = it.mesh; it.mesh = null; hideMesh(m); } }
     for(const m of cores){
-      m.position.z += sd;
+      if(!m.visible) continue;
       m.rotation.y += dt*3;
-      if(m.position.z > 26){ respawn(m, true); continue; }
       const dx = m.position.x-ship.position.x, dy = m.position.y-ship.position.y;
       const dz = nearestDz(m.position.z-ship.position.z);
       if(dx*dx+dy*dy+dz*dz < CORE_R2) pickupCore(m);
@@ -2454,7 +2784,7 @@ const AsteroidRun = (()=>{
   function collide(now, sd){
     Assets.shipSpheresWorld(ship, shipSph);
     for(const m of asts){
-      if(m.position.z < -60 || m.position.z - sd > 30) continue;   // 奥行きが離れた岩は判定不要(粗判定の手前で除外)
+      if(!m.visible || m.position.z < -60 || m.position.z - sd > 30) continue;   // 奥行きが離れた岩は判定不要(粗判定の手前で除外)
       if(Assets.clearance(m, shipSph, sd) < 0){ hit(now, m); if(!playing) return false; }
     }
     return true;
@@ -2602,7 +2932,7 @@ const AsteroidRun = (()=>{
         const L = v.fromBufferAttribute(pos, i).length();
         mn = Math.min(mn, L); mx = Math.max(mx, L);
       }
-      const g0 = asts[0].geometry; respawn(asts[0], true);
+      const g0 = asts[0].geometry; freeMesh(asts[0]);
       return {distinctGeos: geos.size, distinctColors: cols.size,
         radiusSpread: +(mx-mn).toFixed(3),
         hasMap: !!asts[0].material.map, hasBump: !!asts[0].material.bumpMap,
@@ -2637,6 +2967,7 @@ const AsteroidRun = (()=>{
       clearance: Assets.clearance, asts, shipObj: ship, coreR2: CORE_R2,
       tick: (ms = 16)=>loop(last + ms),   // テスト用: rAFに依存せず1フレーム進める(非表示タブ対策)
       lookProbe, reticleProbe, reticle: ret, cores, grade, rig: gameRig,   // SPEC-09b
+      get director(){ return director; },                                   // SPEC-09c
       collide: (now, measureOnly)=>{
         if(!measureOnly) return collide(now, 0);
         Assets.shipSpheresWorld(ship, shipSph);   // 性能計測用: 奥行きの除外なしで全岩を精査(最悪ケース)
@@ -2798,7 +3129,8 @@ const Guide = (()=>{
       [.48, ()=>'— 今、お前は岩に触れた。シールドは3枚。衝突を3度だけ肩代わりする。'],
       [.55, ()=>'砕けるたび、船体は裸に近づく。速度も20%失われる。'],
       [.62, ()=>'シールド0 — 状態表示「CRITICAL」。赤色灯が回る。次の1発はない。'],
-      [.72, ()=>'最大被弾は4回。それがこの宙域の規定だ。']]},
+      [.72, ()=>'最大被弾は4回。それがこの宙域の規定だ。'],
+      [.76, ()=>'宙域は40秒ごとに変わる。奥へ進むほど岩の並びは険しく、船は速くなる。']]},
   };
 
   function fillDom(){
@@ -3231,7 +3563,7 @@ function pageLookProbe(id, k, snap = false){
     blownPct:+(hot/n*100).toFixed(3), crushedPct:+(crush/n*100).toFixed(2),
     rockPx:+(rn/n*100).toFixed(2), rockMean: rn ? +(rsum/rn).toFixed(4) : null, rockCrushedPct: rn ? +(rcr/rn*100).toFixed(2) : null, url};
 }
-window.VG = {THREE, Look, SoundEngine, AsteroidRun, Quality, openLayer, closeLayer,
+window.VG = {THREE, Look, Spawner, SoundEngine, AsteroidRun, Quality, openLayer, closeLayer,
   Tl, Assets, Guide, pageMouse: mouse, isTouch: IS_TOUCH,
   pageFx: {composer: pageComposer, get bloom(){ return pageBloom; },
     camera, stepCamera: stepPageCamera, lookProbe: pageLookProbe, scene, renderer}};

@@ -75,7 +75,8 @@
       gl.readPixels((w-bw)>>1, (h-bh)>>1, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
       let sum = 0; for(let i = 0; i < buf.length; i += 4) sum += buf[i]+buf[i+1]+buf[i+2];
       return sum/(bw*bh*3); };
-    const keep = rocks.map(m=>m.position.clone());
+    const keep = rocks.map(m=>m.position.clone()), keepVis = rocks.map(m=>m.visible);
+    rocks[0].visible = true;   // SPEC-09c改訂: プールの岩は未使用時に非表示のため、借りる岩を表示する
     const gainAt = z=>{
       rocks.forEach((m, i)=>m.position.set(0, 0, -1500 - i*10));
       rocks[0].position.set(0, 0, z); rocks[0].scale.setScalar(z < -150 ? 24 : 5);
@@ -83,7 +84,7 @@
       const off = sample(); hl.intensity = k;
       return on - off; };
     const gNear = gainAt(-30), gFar = gainAt(-300);
-    rocks.forEach((m, i)=>{ m.position.copy(keep[i]); m.scale.setScalar(m.userData.r); });
+    rocks.forEach((m, i)=>{ m.position.copy(keep[i]); m.scale.setScalar(m.userData.r); m.visible = keepVis[i]; });
     t('LIGHT-02 近距離が明るくなる', gNear > 8, `gain(近)=${gNear.toFixed(1)}`);
     t('LIGHT-03 遠距離は変化なし', Math.abs(gFar) < 2 && gNear > gFar*3 + 5,
       `gain(遠)=${gFar.toFixed(1)}`);

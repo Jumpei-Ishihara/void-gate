@@ -143,13 +143,15 @@
     D.asts.forEach((m, i)=>m.position.set(0, 0, -1500 - i*10));
     D.shipObj.position.set(0, 0, 0); D.shipObj.rotation.set(0, 0, 0);
     const m0 = D.asts[0], ex = extremeDir(D.asts[0].geometry === geos[0] ? 0 : geos.indexOf(m0.geometry), true);
-    const s0 = m0.userData.r;
+    const s0 = m0.userData.r, vis0 = m0.visible;
+    m0.visible = true;   // SPEC-09c以降: プールの岩は未使用時に非表示
     m0.quaternion.setFromUnitVectors(ex.dir, new T.Vector3(-1, 0, 0));
     m0.position.set(3.2 + ex.k*s0, -.4, 1.2);
     st.inv = 0; const sh0 = st.shields;
     D.collide(0, false);
     const hitNew = st.shields === sh0 - 1;
     D.asts.forEach((m, i)=>m.position.copy(keep[i]));
+    m0.visible = vis0;
     st.shields = sh0; st.inv = 0;
     t('F1-T11 ループ組込(翼貫通で被弾)', hitNew, `shields ${sh0}→${hitNew ? sh0-1 : sh0} r=${s0.toFixed(2)}`);
   }else t('F1-T11 ループ組込(翼貫通で被弾)', false, 'debug().collide 未実装');
