@@ -79,8 +79,11 @@
   // ---- SPEC-02 Bloom ----
   const names = (D.composer.passes||[]).map(p=>p.constructor.name);
   const iR = names.indexOf('RenderPass'), iB = names.indexOf('UnrealBloomPass'), iA = names.indexOf('AfterimagePass');
-  t('BLM-01/02 パス順序', iR===0 && iB===1 && iA===2, names.join('→'));
-  t('BLM-03 threshold', D.bloom && D.bloom.threshold >= .4 && D.bloom.threshold <= .8,
+  // SPEC-09b改訂: Grade(ACES)とHUD(レティクル)パスが Bloom と Afterimage の間に入る。相対順序で検証
+  const iG = (D.composer.passes||[]).findIndex(p=>p.isGradePass);
+  t('BLM-01/02 パス順序', iR===0 && iB===1 && iG > iB && iA > iG && iA === names.length - 1, names.join('→'));
+  // SPEC-09b改訂: HDR基準へ移行(発光体だけが1を超える) → 閾値は .9〜1.1
+  t('BLM-03 threshold', D.bloom && D.bloom.threshold >= .9 && D.bloom.threshold <= 1.1,
     'th='+(D.bloom&&D.bloom.threshold));
   t('BLM-04 SP解像度係数', typeof D.bloomRes === 'number' && (D.isTouch ? D.bloomRes === .5 : D.bloomRes === 1),
     `isTouch=${D.isTouch} res=${D.bloomRes}`);

@@ -67,7 +67,7 @@
     t('LIGHT-01b 光源が計器より前方', hl.position.z < -3, 'hl.z='+hl.position.z.toFixed(1));
 
     const rp = D2.composer.passes[0], scn = rp.scene, cam = rp.camera, RD2 = D2.composer.renderer;
-    const rocks = scn.children.filter(o=>o.isMesh && o.material && o.material.bumpMap);
+    const rocks = scn.children.filter(o=>o.isMesh && o.userData.isRock);   // SPEC-09b改訂: bumpMap(F4で廃止)ではなく識別子で抽出
     const gl = RD2.getContext();
     const sample = ()=>{ RD2.render(scn, cam);
       const w = RD2.domElement.width, h = RD2.domElement.height, bw = 160, bh = 120;

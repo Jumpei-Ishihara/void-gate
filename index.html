@@ -608,14 +608,16 @@ import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
 import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
 import {AfterimagePass} from 'three/addons/postprocessing/AfterimagePass.js';
 import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
+import {ShaderPass} from 'three/addons/postprocessing/ShaderPass.js';
 
 const canvas = document.getElementById('space');
 const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:false});
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;   // SPEC-09b F2-04(PCはブルームの最終コピー、SPは各マテリアルで適用)
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x030014, 0.0028);
+scene.fog = new THREE.FogExp2(0x01010a, 0.0028);
 const camera = new THREE.PerspectiveCamera(62, innerWidth/innerHeight, 0.1, 1200);
 camera.position.set(0, 0, 80);
 
@@ -627,7 +629,7 @@ const pageComposer = new EffectComposer(renderer);
 pageComposer.addPass(new RenderPass(scene, camera));
 let pageBloom = null;
 if(!IS_TOUCH){
-  pageBloom = new UnrealBloomPass(new THREE.Vector2(innerWidth*.5, innerHeight*.5), .5, .6, .62);
+  pageBloom = new UnrealBloomPass(new THREE.Vector2(innerWidth*.5, innerHeight*.5), .5, .3, 1.0);   // SPEC-09b: HDR基準(発光体だけを拾う)
   pageComposer.addPass(pageBloom);
 }
 
@@ -642,6 +644,56 @@ function glowTexture(inner='rgba(255,255,255,1)', outer='rgba(255,255,255,0)'){
   return new THREE.CanvasTexture(c);
 }
 const starTex = glowTexture();
+
+/* ---------- SPEC-09b: 共通ルック(恒星1灯+回り込み光+リム / 宇宙の環境マップ / ACES) ---------- */
+const Look = (()=>{
+  const LOOK = {keyDir: new THREE.Vector3(-60, 35, 40), keyColor: 0xfff0dc, keyI: 7.5,
+                hemiSky: 0x2a3e66, hemiGround: 0x0a0710, hemiI: .9,
+                rimDir: new THREE.Vector3(40, 18, -70), rimColor: 0x6fb8ff, rimI: 2.4,
+                exposure: 1.0, fog: 0x01010a};
+  // 恒星の輝点+ハロー+淡い星雲を持つ手続き的な空を PMREM で映り込み用に変換(外部HDRI不要)
+  function spaceEnv(renderer, keyDir = LOOK.keyDir){
+    const sc = new THREE.Scene();
+    const geo = new THREE.SphereGeometry(10, 64, 32);
+    const mat = new THREE.ShaderMaterial({side: THREE.BackSide, depthWrite: false,
+      uniforms: {kd: {value: keyDir.clone().normalize()}},
+      vertexShader: `varying vec3 vd; void main(){ vd = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position, 1.); }`,
+      fragmentShader: `uniform vec3 kd; varying vec3 vd;
+        void main(){ vec3 d = normalize(vd); float k = max(dot(d, kd), 0.);
+          vec3 c = vec3(.006, .008, .018);
+          c += vec3(1., .93, .82)*pow(k, 900.)*60.;
+          c += vec3(1., .85, .7)*pow(k, 24.)*.35;
+          c += vec3(.25, .12, .45)*smoothstep(.2, 1., d.y*.5 + .5)*.05;
+          c += vec3(0., .25, .35)*smoothstep(.4, 1., -d.x)*.03;
+          gl_FragColor = vec4(c, 1.); }`});
+    sc.add(new THREE.Mesh(geo, mat));
+    const pm = new THREE.PMREMGenerator(renderer);
+    const rt = pm.fromScene(sc, .02);
+    pm.dispose(); geo.dispose(); mat.dispose();
+    return rt.texture;
+  }
+  function rig(scene, o = {}){
+    const hemi = new THREE.HemisphereLight(LOOK.hemiSky, LOOK.hemiGround, o.hemiI ?? LOOK.hemiI);
+    const key = new THREE.DirectionalLight(LOOK.keyColor, o.keyI ?? LOOK.keyI);
+    key.position.copy(o.keyDir || LOOK.keyDir);
+    const rim = new THREE.DirectionalLight(LOOK.rimColor, o.rimI ?? LOOK.rimI);
+    rim.position.copy(o.rimDir || LOOK.rimDir);
+    scene.add(hemi, key, key.target, rim);
+    return {hemi, key, rim};
+  }
+  // three r160 の ACESFilmicToneMapping と同一式(線形→線形0..1)。仕上げ効果はF6で追加
+  const GradeShader = {
+    uniforms: {tDiffuse: {value: null}, exposure: {value: LOOK.exposure}},
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position, 1.); }`,
+    fragmentShader: `uniform sampler2D tDiffuse; uniform float exposure; varying vec2 vUv;
+      vec3 RRTAndODTFit(vec3 v){ vec3 a = v*(v + .0245786) - .000090537; vec3 b = v*(.983729*v + .4329510) + .238081; return a/b; }
+      vec3 aces(vec3 c){
+        const mat3 I = mat3(vec3(.59719, .07600, .02840), vec3(.35458, .90834, .13383), vec3(.04823, .01566, .83777));
+        const mat3 O = mat3(vec3(1.60475, -.10208, -.00327), vec3(-.53108, 1.10813, -.07276), vec3(-.07367, -.00605, 1.07602));
+        c *= exposure/.6; c = I*c; c = RRTAndODTFit(c); c = O*c; return clamp(c, 0., 1.); }
+      void main(){ gl_FragColor = vec4(aces(texture2D(tDiffuse, vUv).rgb), 1.); }`};
+  return {LOOK, spaceEnv, rig, GradeShader};
+})();
 
 /* ---------- 星layers(3層パララックス) ---------- */
 function makeStars(count, spread, size, color, depth){
@@ -723,10 +775,9 @@ const ring = new THREE.Mesh(new THREE.RingGeometry(30, 44, 96), ringMat);
 ring.rotation.x = Math.PI/2.4; ring.rotation.y = .25;
 planetGroup.add(ring);
 
-scene.add(new THREE.AmbientLight(0x223355, 1.6));
-const sun = new THREE.PointLight(0x88bbff, 2800, 0, 1.8);
-sun.position.set(-120, 60, -60);
-scene.add(sun);
+// SPEC-09b: 一様な環境光+点光源 → 共通ルック(恒星1灯+回り込み光+リム+環境マップ)
+const pageRig = Look.rig(scene);
+scene.environment = Look.spaceEnv(renderer);
 
 /* ---------- 重力波パルス(クリック) ---------- */
 const pulses = [];
@@ -1218,6 +1269,8 @@ const SoundEngine = (()=>{
 
 /* ================= 共有3Dファクトリ Assets (SPEC-07a) — ゲームとページ双方から利用 ================= */
 const Assets = (()=>{
+  // SPEC-09b F2-06: 本当に光る物は線形値を 1 超(HDR)にし、bloom(閾値1.0)が発光体だけを拾うようにする
+  const hdr = (hex, k)=>new THREE.Color(hex).multiplyScalar(k);
   // 岩の頂点変位(seed付き再現性): 大起伏(sin合成) + クレーター凹み(AST-01/02)
   function deformRock(geo, seed){
     let s = seed>>>0;
@@ -1418,10 +1471,10 @@ const Assets = (()=>{
       geo: new THREE.OctahedronGeometry(1.6),
       ringA: new THREE.TorusGeometry(2.4, .09, 6, 24),
       ringB: new THREE.TorusGeometry(3.0, .055, 6, 24),
-      matA: new THREE.MeshBasicMaterial({color:0x00f0ff, transparent:true, opacity:.7, blending:THREE.AdditiveBlending, depthWrite:false}),
-      matB: new THREE.MeshBasicMaterial({color:0xbffcff, transparent:true, opacity:.45, blending:THREE.AdditiveBlending, depthWrite:false})};
+      matA: new THREE.MeshBasicMaterial({color:hdr(0x00f0ff, 2.2), transparent:true, opacity:.7, blending:THREE.AdditiveBlending, depthWrite:false}),
+      matB: new THREE.MeshBasicMaterial({color:hdr(0xbffcff, 2.2), transparent:true, opacity:.45, blending:THREE.AdditiveBlending, depthWrite:false})};
     const m = new THREE.Mesh(_coreShared.geo,
-      new THREE.MeshBasicMaterial({color:0x00f0ff, transparent:true, opacity:.95, blending:THREE.AdditiveBlending}));
+      new THREE.MeshBasicMaterial({color:hdr(0x00f0ff, 2.2), transparent:true, opacity:.95, blending:THREE.AdditiveBlending}));
     const halo = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x00f0ff, blending:THREE.AdditiveBlending, depthWrite:false}));
     halo.scale.set(9, 9, 1);
     const ring1 = new THREE.Mesh(_coreShared.ringA, _coreShared.matA); ring1.rotation.x = .5;
@@ -1432,7 +1485,8 @@ const Assets = (()=>{
   }
   // 機体一式(SPEC-05 SHP仕様と同一)。partsは装飾更新用の参照
   function buildShip(){
-    const hull = new THREE.MeshStandardMaterial({color:0xbfd8ff, metalness:.85, roughness:.35, emissive:0x16335f});
+    // SPEC-09b F2-07: 外板の emissive を撤去(明るさは主光と映り込みで得る)
+    const hull = new THREE.MeshStandardMaterial({color:0xbfd8ff, metalness:.85, roughness:.35});
     const group = new THREE.Group();
     const nose = new THREE.Mesh(new THREE.ConeGeometry(1.3, 5.2, 4), hull);
     nose.rotation.x = -Math.PI/2;
@@ -1440,7 +1494,7 @@ const Assets = (()=>{
     wing.position.set(0, -.4, 1.2);
     const fin = new THREE.Mesh(new THREE.BoxGeometry(.3, 2.4, 1.8), hull);
     fin.position.set(0, .9, 1.6);
-    const eng = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x00f0ff, blending:THREE.AdditiveBlending, depthWrite:false}));
+    const eng = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x00f0ff, blending:THREE.AdditiveBlending, depthWrite:false}));   // HDR化はF6のプルーム刷新で扱う(大きな加算スプライトは飽和して輪郭を隠すため)
     eng.scale.set(4, 4, 1); eng.position.set(0, 0, 3.2);
     group.add(nose, wing, fin, eng);
     const nozzles = new THREE.Mesh(mergeGeo([
@@ -1456,9 +1510,9 @@ const Assets = (()=>{
       opacity:.55, blending:THREE.AdditiveBlending, depthWrite:false});
     const ex1 = new THREE.Sprite(exMat), ex2 = new THREE.Sprite(exMat);
     ex1.position.set(-1.6, -.15, 4.0); ex2.position.set(1.6, -.15, 4.0);
-    const tipL = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0xff4455,
+    const tipL = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:hdr(0xff4455, 1.5),
       transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false}));
-    const tipR = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x55ff88,
+    const tipR = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:hdr(0x55ff88, 1.5),
       transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false}));
     tipL.position.set(-3.75, -.4, 1.2); tipR.position.set(3.75, -.4, 1.2);
     tipL.scale.setScalar(1.1); tipR.scale.setScalar(1.1);
@@ -1473,7 +1527,8 @@ const Assets = (()=>{
 const AsteroidRun = (()=>{
   let R, S, C, ship, dust;
   let cockpit, stick, lever, ret, retMat, dcv, dctx, dtex;
-  let composer, afterimage, bloom;
+  let composer, afterimage, bloom, grade, hudS, hudRig, gameRig;
+  const BLOOM_BASE = .45;   // SPEC-09b: HDR基準のブルーム強度
   const BLOOM_RES = IS_TOUCH ? .5 : 1;   // SPは半解像度(BLM-04)
   let view = 'cockpit', shake = 0;
   let lockMode = true;   // true=自動ロックオン / false=通常モード
@@ -1505,8 +1560,8 @@ const AsteroidRun = (()=>{
     R = new THREE.WebGLRenderer({canvas:gameCv, antialias:true});
     R.setPixelRatio(Math.min(devicePixelRatio, 2));
     S = new THREE.Scene();
-    S.background = new THREE.Color(0x020010);
-    S.fog = new THREE.FogExp2(0x020010, .0035);
+    S.background = new THREE.Color(Look.LOOK.fog);
+    S.fog = new THREE.FogExp2(Look.LOOK.fog, .0026);   // SPEC-09b F2-08
     C = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, .1, 1500);
     C.position.set(0, 4, 17);
 
@@ -1516,10 +1571,9 @@ const AsteroidRun = (()=>{
     shipFx = shipBuilt.parts;
     S.add(ship);
 
-    S.add(new THREE.AmbientLight(0x445577, 2));
-    const key = new THREE.DirectionalLight(0xaaccff, 2.4);
-    key.position.set(40, 60, 30);
-    S.add(key);
+    // SPEC-09b: 恒星1灯(接近する岩のこちら側を照らす向き)+回り込み光+リム+宇宙の環境マップ
+    gameRig = Look.rig(S);
+    S.environment = Look.spaceEnv(R);
 
     // ヘッドライト: 前方の近距離だけを照らし、接近中の障害物が明るく浮かび上がる。
     // shipの子にすると視点切替でship.visible=falseの際にライトごと除外されるためシーン直下に置く
@@ -1536,7 +1590,7 @@ const AsteroidRun = (()=>{
       const r = 2 + Math.random()*6;
       m.scale.setScalar(r);
       m.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
-      m.userData = {r, sx:(Math.random()-.5)*.5, sy:(Math.random()-.5)*.5, sz:(Math.random()-.5)*.4};
+      m.userData = {r, sx:(Math.random()-.5)*.5, sy:(Math.random()-.5)*.5, sz:(Math.random()-.5)*.4, isRock:true};
       S.add(m); asts.push(m);
     }
     // SPEC-07a: コアはAssetsファクトリから生成(構造はSPEC-05 CORのまま)
@@ -1581,6 +1635,10 @@ const AsteroidRun = (()=>{
     shardsBudget = SHARDS_PER_BOOM;
 
     buildFxPool();
+    // SPEC-09b F2-05(CON-05): レティクルは専用シーンに置き、トーンマップの後(線形のまま)に合成する
+    hudS = new THREE.Scene(); hudS.name = 'hud';
+    hudRig = new THREE.Group(); hudRig.matrixAutoUpdate = false;
+    hudS.add(hudRig);
     buildCockpit();
 
     // ポストプロセス: 残像によるモーションブラー
@@ -1589,8 +1647,16 @@ const AsteroidRun = (()=>{
     composer.addPass(new RenderPass(S, C));
     // Render → Bloom → Afterimage の順(BLM-02。逆順は残像が再発光しハレーション)
     bloom = new UnrealBloomPass(
-      new THREE.Vector2(innerWidth*BLOOM_RES, innerHeight*BLOOM_RES), .85, .6, .62);
+      new THREE.Vector2(innerWidth*BLOOM_RES, innerHeight*BLOOM_RES), BLOOM_BASE, .3, 1.0);   // SPEC-09b: HDR基準
     composer.addPass(bloom);
+    // Render → Bloom → Grade(ACES) → HUD(レティクル) → Afterimage。レティクルの合成順・残像は従来と同じ
+    grade = new ShaderPass(Look.GradeShader); grade.isGradePass = true;
+    composer.addPass(grade);
+    const hudPass = new RenderPass(hudS, C);
+    hudPass.clear = false; hudPass.clearDepth = true;
+    const hudRender = hudPass.render.bind(hudPass);
+    hudPass.render = (...a)=>{ C.updateMatrixWorld(); hudRig.matrix.copy(C.matrixWorld); hudRig.matrixWorldNeedsUpdate = true; hudRender(...a); };
+    composer.addPass(hudPass);
     afterimage = new AfterimagePass(.8);
     composer.addPass(afterimage);
 
@@ -1715,7 +1781,7 @@ const AsteroidRun = (()=>{
     ret.add(rbar(.09, rt, 0, 0));
     ret.add(rbar(rt, .09, 0, 0));
     ret.position.set(0, -.65, -3);
-    cockpit.add(ret);
+    hudRig.add(ret);   // SPEC-09b: カメラ座標系は同じ(hudRigはカメラの行列に毎フレーム一致)
 
     // 計器ディスプレイ(3面独立パネル / 左右を内側に向けたラップアラウンド配置)
     dcv = []; dctx = []; dtex = [];
@@ -1910,7 +1976,7 @@ const AsteroidRun = (()=>{
         transparent:true, opacity:0, side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false}));
       m.visible = false; m.userData = {t:0, life:.5, on:false};
       S.add(m); P.rings.push(m);
-      const fl = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0xffe3b8,
+      const fl = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:new THREE.Color(0xffe3b8).multiplyScalar(4),
         transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false}));
       const li = new THREE.PointLight(0xffcf9a, 0, 90, 2);
       fl.add(li);
@@ -1926,7 +1992,7 @@ const AsteroidRun = (()=>{
     }
     const trGeo = new THREE.CylinderGeometry(.07, .07, 1, 5, 1, true);
     for(let i = 0; i < 2; i++){
-      const m = new THREE.Mesh(trGeo, new THREE.MeshBasicMaterial({color:0x66f6ff,
+      const m = new THREE.Mesh(trGeo, new THREE.MeshBasicMaterial({color:new THREE.Color(0x66f6ff).multiplyScalar(3),
         transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false}));
       m.visible = false; m.userData = {t:0, life:.12, on:false};
       S.add(m); P.tracers.push(m);
@@ -1971,7 +2037,7 @@ const AsteroidRun = (()=>{
       sh.visible = true;
     }
     sparksAt(pos, 1);
-    if(bloom){ bloom.strength = 1.15; P.boostT = .08; }   // FX-07(シミュレーション時間で減衰)
+    if(bloom){ bloom.strength = BLOOM_BASE*1.6; P.boostT = .08; }   // FX-07(シミュレーション時間で減衰)
   }
   function sparksAt(pos, spread){   // 着弾/被弾スパーク(FX-05/06)
     if(!P) return;
@@ -2004,7 +2070,7 @@ const AsteroidRun = (()=>{
   function updateFx(dt){
     if(!P) return;
     const drift = st ? st.speed*dt : 0;
-    if(P.boostT > 0){ P.boostT -= dt; if(P.boostT <= 0 && bloom) bloom.strength = .85; }
+    if(P.boostT > 0){ P.boostT -= dt; if(P.boostT <= 0 && bloom) bloom.strength = BLOOM_BASE; }
     for(const m of P.rings){
       const u = m.userData; if(!u.on) continue;
       u.t += dt; const k = u.t/u.life;
@@ -2084,7 +2150,7 @@ const AsteroidRun = (()=>{
       for(const m of list){ m.userData.on = false; m.visible = false; if(m.userData.light) m.userData.light.intensity = 0; }
     for(let i = 0; i < 128; i++){ P.sparkD[i].on = false; P.sparks.geometry.attributes.position.array[i*3+1] = 1e5; }
     P.sparks.geometry.attributes.position.needsUpdate = true;
-    if(bloom) bloom.strength = .85;
+    if(bloom) bloom.strength = BLOOM_BASE;
     P.boostT = 0;
     glitchUntil = 0;
   }
@@ -2116,6 +2182,7 @@ const AsteroidRun = (()=>{
 
   function applyView(){
     if(cockpit) cockpit.visible = view === 'cockpit';
+    if(hudRig) hudRig.visible = view === 'cockpit';
     if(ship) ship.visible = view === 'chase';   // 一人称では機体(排気グロー等)を非表示
     gameLayer.classList.toggle('cockpit', activeGame === 'asteroid' && view === 'cockpit');
   }
@@ -2392,6 +2459,107 @@ const AsteroidRun = (()=>{
     }
     return true;
   }
+  // SPEC-09b §3.4: 輝度プローブ — ルックデブと同じ固定配置(シード7)で1フレーム描いて輝度統計を返す(状態は復元)
+  function readAll(){
+    const gl = R.getContext(), w = R.domElement.width, h = R.domElement.height;
+    const buf = new Uint8Array(w*h*4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    return buf;
+  }
+  // 岩の領域マスク: 岩=白・その他の不透明物=黒(遮蔽を保つ)、加算/点/線は非表示で描く
+  function rockMask(isRock){
+    const white = new THREE.MeshBasicMaterial({color:0xffffff}), black = new THREE.MeshBasicMaterial({color:0x000000});
+    const keep = [];
+    S.traverse(o=>{
+      if(o === S || !o.visible) return;
+      if(o.isMesh && !(o.material && o.material.blending === THREE.AdditiveBlending)){ keep.push([o, 'm', o.material]); o.material = isRock(o) ? white : black; }
+      else if(o.isMesh || o.isPoints || o.isLine || o.isSprite){ keep.push([o, 'v']); o.visible = false; }
+    });
+    const bg = S.background, fog = S.fog; S.background = new THREE.Color(0); S.fog = null;
+    R.setRenderTarget(null); R.render(S, C);
+    const m = readAll();
+    keep.forEach(([o, k, mat])=>{ if(k === 'm') o.material = mat; else o.visible = true; });
+    S.background = bg; S.fog = fog; white.dispose(); black.dispose();
+    return m;
+  }
+  function lumStats(buf, mask){
+    let n = 0, sum = 0, sq = 0, hot = 0, crush = 0, rn = 0, rsum = 0, rcr = 0;
+    for(let i = 0; i < buf.length; i += 16){
+      const Y = (.2126*buf[i] + .7152*buf[i+1] + .0722*buf[i+2])/255;
+      n++; sum += Y; sq += Y*Y; if(Y > .98) hot++; if(Y < .02) crush++;
+      if(mask && mask[i] > 128){ rn++; rsum += Y; if(Y < .02) rcr++; }
+    }
+    const mean = sum/n;
+    return {mean:+mean.toFixed(4), rms:+Math.sqrt(Math.max(0, sq/n - mean*mean)).toFixed(4),
+      blownPct:+(hot/n*100).toFixed(3), crushedPct:+(crush/n*100).toFixed(2),
+      rockPx:+(rn/n*100).toFixed(2), rockMean: rn ? +(rsum/rn).toFixed(4) : null, rockCrushedPct: rn ? +(rcr/rn*100).toFixed(2) : null};
+  }
+  function readStats(){ return lumStats(readAll(), null); }
+  function withProbeScene(v, fn){
+    const keepR = asts.map(m=>[m.position.clone(), m.quaternion.clone(), m.scale.clone(), m.visible]);
+    const keepC = cores.map(m=>m.position.clone());
+    const keepS = [ship.position.clone(), ship.rotation.clone()], keepV = view;
+    const keepCam = [C.position.clone(), C.quaternion.clone(), C.fov];
+    const aiDamp = afterimage.uniforms['damp'].value;
+    let s = 7; const rnd = ()=>((s = (s*1664525 + 1013904223)>>>0)/4294967296);
+    const L = [{x:-9, y:2.5, z:-26, s:6.2}, {x:11, y:-4, z:-44, s:5.2}, {x:-3, y:7, z:-74, s:7.5}, {x:6, y:3, z:-18, s:2.2}];
+    while(L.length < asts.length) L.push({x:(rnd()-.5)*110, y:(rnd()-.5)*80, z:-60 - rnd()*820, s:2 + rnd()*6});
+    asts.forEach((m, i)=>{ const p = L[i]; m.position.set(p.x, p.y, p.z); m.scale.setScalar(p.s); m.rotation.set(i*.7, i*1.3, i*.4); m.visible = true; });
+    cores.forEach((m, i)=>m.position.set(i ? 0 : 3.5, i ? 0 : 1.2, i ? -5000 : -36));
+    ship.position.set(0, 0, 0); ship.rotation.set(0, 0, 0);
+    view = v; applyView();
+    if(headlight){ headlight.position.set(0, .4, -7); hlTarget.position.set(0, 0, -95); }
+    if(v === 'chase'){ C.position.set(0, 4, 17); C.fov = 72; C.lookAt(0, 0, -60); }
+    else { C.position.set(0, .55, 1.35); C.fov = 72; C.lookAt(0, .35, -160); ret.position.set(0, -.65, -3); ret.scale.setScalar(1); }
+    C.updateProjectionMatrix(); C.updateMatrixWorld(true);
+    afterimage.uniforms['damp'].value = 0;
+    // 画面サイズに依存しないよう固定解像度(1024x768)で描く
+    R.setSize(1024, 768, false); composer.setSize(1024, 768); if(bloom) bloom.setSize(1024*BLOOM_RES, 768*BLOOM_RES);
+    C.aspect = 1024/768; C.updateProjectionMatrix();
+    let out;
+    try{ out = fn(); }
+    finally{
+      asts.forEach((m, i)=>{ const k = keepR[i]; m.position.copy(k[0]); m.quaternion.copy(k[1]); m.scale.copy(k[2]); m.visible = k[3]; });
+      cores.forEach((m, i)=>m.position.copy(keepC[i]));
+      ship.position.copy(keepS[0]); ship.rotation.copy(keepS[1]);
+      view = keepV; applyView();
+      C.position.copy(keepCam[0]); C.quaternion.copy(keepCam[1]); C.fov = keepCam[2]; C.updateProjectionMatrix();
+      afterimage.uniforms['damp'].value = aiDamp;
+      resize();
+    }
+    return out;
+  }
+  function lookProbe(v = 'chase', snap = false){
+    if(!R) return null;
+    return withProbeScene(v, ()=>{
+      composer.render();
+      const url = snap ? R.domElement.toDataURL('image/jpeg', .85) : undefined;   // 目視確認用
+      const buf = readAll();
+      const st = lumStats(buf, rockMask(o=>asts.includes(o)));
+      if(url) st.url = url;
+      return st; });
+  }
+  // CON-05: 黒背景上のレティクル中心の画素(メインシーンの内容を隠して描く)
+  function reticleProbe(){
+    if(!R) return null;
+    return withProbeScene('cockpit', ()=>{
+      const hidden = [];
+      S.traverse(o=>{ if(o !== S && o.visible && (o.isMesh || o.isPoints || o.isLineSegments || o.isSprite) && !isReticle(o)){ o.visible = false; hidden.push(o); } });
+      const bg = S.background; S.background = new THREE.Color(0x000000);
+      try{
+        composer.render();
+        const p = new THREE.Vector3(); ret.getWorldPosition(p); p.project(C);
+        const w = R.domElement.width, h = R.domElement.height;
+        const cx = Math.round((p.x*.5 + .5)*w), cy = Math.round((p.y*.5 + .5)*h);
+        const gl = R.getContext(), N = 9, buf = new Uint8Array(N*N*4);
+        gl.readPixels(cx - 4, cy - 4, N, N, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+        let best = [0, 0, 0];
+        for(let i = 0; i < buf.length; i += 4) if(buf[i+1] + buf[i+2] > best[1] + best[2]) best = [buf[i], buf[i+1], buf[i+2]];
+        return {rgb: best, color: retMat.color.getHex(), opacity: retMat.opacity, additive: retMat.blending === THREE.AdditiveBlending};
+      }finally{ hidden.forEach(o=>o.visible = true); S.background = bg; }
+    });
+  }
+  function isReticle(o){ for(let p = o; p; p = p.parent) if(p === ret) return true; return false; }
   function input(x, y){
     mt.x = (x/innerWidth - .5)*2;
     mt.y = (y/innerHeight - .5)*2;
@@ -2468,6 +2636,7 @@ const AsteroidRun = (()=>{
       // SPEC-09a
       clearance: Assets.clearance, asts, shipObj: ship, coreR2: CORE_R2,
       tick: (ms = 16)=>loop(last + ms),   // テスト用: rAFに依存せず1フレーム進める(非表示タブ対策)
+      lookProbe, reticleProbe, reticle: ret, cores, grade, rig: gameRig,   // SPEC-09b
       collide: (now, measureOnly)=>{
         if(!measureOnly) return collide(now, 0);
         Assets.shipSpheresWorld(ship, shipSph);   // 性能計測用: 奥行きの除外なしで全岩を精査(最悪ケース)
@@ -2543,7 +2712,7 @@ const Guide = (()=>{
     }
     // 機体の照明: すれ違う岩は機体の真横に来るため前方円錐では当たらない。
     // 距離減衰する点光源で機体周囲(近距離)だけを照らし、接近した岩が明るく浮かぶようにする
-    sortie.headlight = new THREE.PointLight(0xcce9ff, 200, 42, 2.0);
+    sortie.headlight = new THREE.PointLight(0xcce9ff, 110, 42, 2.0);   // SPEC-09b: ACES下で外板の鏡面が白飛びしない強度に再較正
     scene.add(sortie.headlight);
   }
   function shipAt(t){
@@ -3015,10 +3184,57 @@ Guide.setup();   // SPEC-07b: 訓練章の構築(全ステージ初期構築, PE
 loop();
 
 // テストハーネス用の公開フック(specs/00 §5)。ゲーム挙動には関与しない
-window.VG = {THREE, SoundEngine, AsteroidRun, Quality, openLayer, closeLayer,
+// SPEC-09b §3.4: サイトの輝度プローブ(章idの進行度kへ移動し1フレーム描いて輝度統計を返す)
+function pageLookProbe(id, k, snap = false){
+  Guide.measure();
+  const c = Guide.info().find(d=>d.id === id);
+  if(!c) return null;
+  Tl._setT(c.t0 + (c.t1 - c.t0)*k); Tl.update(.016);
+  for(let i = 0; i < 200; i++) stepPageCamera();
+  Tl.update(.016);
+  // 画面サイズに依存しないよう固定解像度(1024x768)で描いて測り、元に戻す
+  camera.aspect = 1024/768; camera.updateProjectionMatrix();
+  renderer.setSize(1024, 768, false); pageComposer.setSize(1024, 768);
+  if(pageBloom) pageBloom.setSize(512, 384);
+  pageComposer.render();
+  const url = snap ? renderer.domElement.toDataURL('image/jpeg', .85) : undefined;   // 目視確認用
+  const gl = renderer.getContext(), w = renderer.domElement.width, h = renderer.domElement.height;
+  const read = ()=>{ const b = new Uint8Array(w*h*4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, b); return b; };
+  const buf = read();
+  // 岩の領域マスク(岩=白・その他の不透明物=黒、加算/点/線は非表示)
+  const rockSet = new Set(Assets.rockMats());
+  const white = new THREE.MeshBasicMaterial({color:0xffffff}), black = new THREE.MeshBasicMaterial({color:0x000000});
+  const keep = [];
+  scene.traverse(o=>{
+    if(o === scene || !o.visible) return;
+    if(o.isMesh && !(o.material && o.material.blending === THREE.AdditiveBlending)){ keep.push([o, 'm', o.material]); o.material = rockSet.has(o.material) ? white : black; }
+    else if(o.isMesh || o.isPoints || o.isLine || o.isSprite){ keep.push([o, 'v']); o.visible = false; }
+  });
+  const fog = scene.fog; scene.fog = null;
+  const tm = renderer.toneMapping; renderer.toneMapping = THREE.NoToneMapping;
+  renderer.setRenderTarget(null); renderer.render(scene, camera);
+  const mask = read();
+  renderer.toneMapping = tm; scene.fog = fog;
+  keep.forEach(([o, k, mat])=>{ if(k === 'm') o.material = mat; else o.visible = true; });
+  white.dispose(); black.dispose();
+  let n = 0, sum = 0, sq = 0, hot = 0, crush = 0, rn = 0, rsum = 0, rcr = 0;
+  for(let i = 0; i < buf.length; i += 16){
+    const Y = (.2126*buf[i] + .7152*buf[i+1] + .0722*buf[i+2])/255;
+    n++; sum += Y; sq += Y*Y; if(Y > .98) hot++; if(Y < .02) crush++;
+    if(mask[i] > 128){ rn++; rsum += Y; if(Y < .02) rcr++; }
+  }
+  const mean = sum/n;
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); pageComposer.setSize(innerWidth, innerHeight);
+  if(pageBloom) pageBloom.setSize(innerWidth*.5, innerHeight*.5);
+  return {mean:+mean.toFixed(4), rms:+Math.sqrt(Math.max(0, sq/n - mean*mean)).toFixed(4),
+    blownPct:+(hot/n*100).toFixed(3), crushedPct:+(crush/n*100).toFixed(2),
+    rockPx:+(rn/n*100).toFixed(2), rockMean: rn ? +(rsum/rn).toFixed(4) : null, rockCrushedPct: rn ? +(rcr/rn*100).toFixed(2) : null, url};
+}
+window.VG = {THREE, Look, SoundEngine, AsteroidRun, Quality, openLayer, closeLayer,
   Tl, Assets, Guide, pageMouse: mouse, isTouch: IS_TOUCH,
   pageFx: {composer: pageComposer, get bloom(){ return pageBloom; },
-    camera, stepCamera: stepPageCamera}};
+    camera, stepCamera: stepPageCamera, lookProbe: pageLookProbe, scene, renderer}};
 </script>
 </body>
 </html>

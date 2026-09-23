@@ -38,12 +38,13 @@
     t('FX-01 三層爆発起動', a1.rings >= 1 && a1.flashes >= 1 && a1.shards >= fx.shardsPerBoom,
       JSON.stringify(a1));
     D = V.AsteroidRun.debug();
-    t('FX-07 ブルーム一時ブースト', D.bloom.strength > .86, 'strength='+D.bloom.strength.toFixed(2));
+    // SPEC-09b改訂: 基準強度 .85 → .45(HDR基準)。ブーストは基準×1.6
+    t('FX-07 ブルーム一時ブースト', D.bloom.strength > .45*1.5, 'strength='+D.bloom.strength.toFixed(2));
 
     fx.step(2);
     const a2 = fx.stats().active;
     t('FX-08c プール回収', a2.rings === 0 && a2.shards === 0 && a2.sparks === 0, JSON.stringify(a2));
-    t('FX-07b ブースト解除', Math.abs(V.AsteroidRun.debug().bloom.strength - .85) < .01,
+    t('FX-07b ブースト解除', Math.abs(V.AsteroidRun.debug().bloom.strength - .45) < .01,
       V.AsteroidRun.debug().bloom.strength.toFixed(2));
 
     V.AsteroidRun.fire();
