@@ -710,18 +710,37 @@ const Look = (()=>{
     return {hemi, key, rim};
   }
   // three r160 の ACESFilmicToneMapping と同一式(線形→線形0..1)。仕上げ効果はF6で追加
+  // SPEC-09f F6-10: 仕上げ(ビネット・粒状ノイズ・周辺の色収差)を ACES の後に適用。
+  // 粒状ノイズは知覚空間(≒sRGB)で加え、暗部だけが荒れないようにする。encode=1 は最終パス用(sRGB化まで行う)
   const GradeShader = {
-    uniforms: {tDiffuse: {value: null}, exposure: {value: LOOK.exposure}},
+    uniforms: {tDiffuse: {value: null}, exposure: {value: LOOK.exposure},
+               vig: {value: .32}, grain: {value: .016}, ca: {value: .0016}, time: {value: 0}, encode: {value: 0}},
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position, 1.); }`,
-    fragmentShader: `uniform sampler2D tDiffuse; uniform float exposure; varying vec2 vUv;
-      vec3 RRTAndODTFit(vec3 v){ vec3 a = v*(v + .0245786) - .000090537; vec3 b = v*(.983729*v + .4329510) + .238081; return a/b; }
-      vec3 aces(vec3 c){
+    fragmentShader: `uniform sampler2D tDiffuse; uniform float exposure, vig, grain, ca, time, encode; varying vec2 vUv;
+      vec3 vgRRTODT(vec3 v){ vec3 a = v*(v + .0245786) - .000090537; vec3 b = v*(.983729*v + .4329510) + .238081; return a/b; }
+      vec3 vgAces(vec3 c){
         const mat3 I = mat3(vec3(.59719, .07600, .02840), vec3(.35458, .90834, .13383), vec3(.04823, .01566, .83777));
         const mat3 O = mat3(vec3(1.60475, -.10208, -.00327), vec3(-.53108, 1.10813, -.07276), vec3(-.07367, -.00605, 1.07602));
-        c *= exposure/.6; c = I*c; c = RRTAndODTFit(c); c = O*c; return clamp(c, 0., 1.); }
-      void main(){ gl_FragColor = vec4(aces(texture2D(tDiffuse, vUv).rgb), 1.); }`};
+        c *= exposure/.6; c = I*c; c = vgRRTODT(c); c = O*c; return clamp(c, 0., 1.); }
+      float vgHash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)))*43758.5453); }
+      vec3 vgSrgb(vec3 c){ return mix(c*12.92, 1.055*pow(c, vec3(1./2.4)) - .055, step(.0031308, c)); }
+      void main(){
+        vec2 d = vUv - .5; float r2 = dot(d, d);
+        vec3 c = vgAces(texture2D(tDiffuse, vUv).rgb);
+        if(ca > 0.){ c.r = vgAces(texture2D(tDiffuse, vUv + d*ca*r2*8.).rgb).r; c.b = vgAces(texture2D(tDiffuse, vUv - d*ca*r2*8.).rgb).b; }
+        c *= 1. - vig*smoothstep(.08, .55, r2);
+        if(grain > 0.){ vec3 p = pow(c, vec3(1./2.2)); p += (vgHash(vUv*1000. + time) - .5)*grain; c = pow(clamp(p, 0., 1.), vec3(2.2)); }
+        c = clamp(c, 0., 1.);
+        gl_FragColor = vec4(encode > .5 ? vgSrgb(c) : c, 1.); }`};
   return {LOOK, spaceEnv, rig, GradeShader};
 })();
+// SPEC-09f F6-11: サイト(PCのみ)にも仕上げ。最終パスとして ACES+仕上げ+sRGB化まで行う(SPは合成パスを増やさない)
+let pageGrade = null;
+if(!IS_TOUCH){
+  pageGrade = new ShaderPass(Look.GradeShader); pageGrade.isGradePass = true;
+  pageGrade.uniforms.encode.value = 1;
+  pageComposer.addPass(pageGrade);
+}
 
 /* ---------- 星layers(3層パララックス) ---------- */
 function makeStars(count, spread, size, color, depth){
@@ -997,6 +1016,7 @@ function loop(){
   ringX += (curX - ringX)*.18; ringY += (curY - ringY)*.18;
   cursorRing.style.left = ringX+'px'; cursorRing.style.top = ringY+'px';
 
+  if(pageGrade) pageGrade.uniforms.time.value = performance.now()*.001;   // SPEC-09f
   if(!activeGame) pageComposer.render();
 }
 
@@ -1492,6 +1512,74 @@ vec4 tpS(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy*tpScale)*w.x + t
     };
     return mat;
   }
+  // ===== SPEC-09f: 機体外板(パネルの継ぎ目+リベット)。高さ → 法線/粗さ =====
+  function hullHeightCanvas(size, seed){
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const g = c.getContext('2d'), r = srng(seed);
+    g.fillStyle = '#9a9a9a'; g.fillRect(0, 0, size, size);
+    g.strokeStyle = '#3a3a3a'; g.lineWidth = Math.max(2, size/170);
+    const rivet = Math.max(1.4, size/230);
+    const split = (x, y, w, h, d)=>{
+      if(d > 4 || w < size/12 || h < size/12){
+        g.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
+        if(r() < .5){ g.fillStyle = '#c8c8c8'; for(let k = 6; k < w - 6; k += size/28){ g.beginPath(); g.arc(x + k, y + 7, rivet, 0, 7); g.fill(); } }
+        return;
+      }
+      if(w > h){ const k = w*(.3 + r()*.4); split(x, y, k, h, d + 1); split(x + k, y, w - k, h, d + 1); }
+      else { const k = h*(.3 + r()*.4); split(x, y, w, k, d + 1); split(x, y + k, w, h - k, d + 1); }
+    };
+    split(0, 0, size, size, 0);
+    return c;
+  }
+  let _hullTex = null;
+  function hullTextures(){
+    if(!_hullTex){
+      const h = hullHeightCanvas(IS_TOUCH ? 256 : 512, 17);
+      const nrm = mapCanvas(h, (H, x, y)=>{
+        const dx = (H(x+1, y-1) + 2*H(x+1, y) + H(x+1, y+1)) - (H(x-1, y-1) + 2*H(x-1, y) + H(x-1, y+1));
+        const dy = (H(x-1, y+1) + 2*H(x, y+1) + H(x+1, y+1)) - (H(x-1, y-1) + 2*H(x, y-1) + H(x+1, y-1));
+        const nx = -dx*2.2, ny = -dy*2.2, L = Math.hypot(nx, ny, 1);
+        return [(nx/L*.5 + .5)*255, (ny/L*.5 + .5)*255, (1/L*.5 + .5)*255]; });
+      const rgh = mapCanvas(h, (H, x, y)=>{ const v = Math.max(0, Math.min(1, .95 + (H(x, y) - .6)*.4))*255; return [v, v, v]; });
+      const tex = cv=>{ const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t; };
+      _hullTex = {normal: tex(nrm), rough: tex(rgh)};
+    }
+    return _hullTex;
+  }
+  // 箱投影UV: 三角形ごとに面の向きの主軸でUVを振る(面ごとに模様の密度が揃う)
+  function boxUV(geo, scale = .35){
+    const g = geo.index ? geo.toNonIndexed() : geo, p = g.attributes.position;
+    const uv = new Float32Array(p.count*2), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3();
+    for(let i = 0; i < p.count; i += 3){
+      a.fromBufferAttribute(p, i); b.fromBufferAttribute(p, i+1); c.fromBufferAttribute(p, i+2);
+      n.subVectors(b, a).cross(c.clone().sub(a));
+      const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+      for(let k = 0; k < 3; k++){
+        const v = k === 0 ? a : k === 1 ? b : c;
+        const [u, w] = ax >= ay && ax >= az ? [v.z, v.y] : ay >= az ? [v.x, v.z] : [v.x, v.y];
+        uv[(i + k)*2] = u*scale; uv[(i + k)*2 + 1] = w*scale;
+      }
+    }
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    return g;
+  }
+  // SPEC-09f F6-03: 排気プルーム(長さ方向=ローカル+y、根元が白〜シアン・先端へ青く消える、時間ノイズで揺らぐ)
+  const _plumeGeo = new THREE.CylinderGeometry(.05, .45, 1, 16, 8, true).translate(0, .5, 0);
+  function plumeMaterial(){
+    return new THREE.ShaderMaterial({transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide,
+      uniforms:{time:{value:0}, strength:{value:.6},
+        hot:{value:new THREE.Color(0xdffcff).multiplyScalar(1.8)}, cool:{value:new THREE.Color(0x2a7bff)}},
+      vertexShader:`varying vec2 vUv; varying float vF;
+        void main(){ vUv = uv; vec4 mv = modelViewMatrix*vec4(position, 1.);
+          vF = abs(dot(normalize(normalMatrix*normal), normalize(-mv.xyz)));
+          gl_Position = projectionMatrix*mv; }`,
+      fragmentShader:`uniform float time, strength; uniform vec3 hot, cool; varying vec2 vUv; varying float vF;
+        float h(float x){ return fract(sin(x*127.1)*43758.5453); }
+        float n1(float x){ float i = floor(x), f = fract(x); return mix(h(i), h(i + 1.), f*f*(3. - 2.*f)); }
+        void main(){ float v = vUv.y;
+          float a = pow(1. - v, 1.6)*pow(vF, 1.5)*(.85 + .15*n1(v*8. - time*20.))*strength;
+          gl_FragColor = vec4(mix(hot, cool, v)*a, a); }`});
+  }
   function setTriplanar(on){
     if(!_rockMats) return;
     for(const m of _rockMats){
@@ -1664,31 +1752,35 @@ vec4 tpS(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy*tpScale)*w.x + t
   }
   // 機体一式(SPEC-05 SHP仕様と同一)。partsは装飾更新用の参照
   function buildShip(){
-    // SPEC-09b F2-07: 外板の emissive を撤去(明るさは主光と映り込みで得る)
-    const hull = new THREE.MeshStandardMaterial({color:0xbfd8ff, metalness:.85, roughness:.35});
+    // SPEC-09b F2-07: 外板の emissive は通常 0(明るさは主光と映り込みで得る)。F6: パネルの法線/粗さで金属の映り込みを出す
+    const ht = hullTextures();
+    const hull = new THREE.MeshStandardMaterial({color:0xc4ccd8, metalness:.86, roughness:.34,
+      normalMap:ht.normal, roughnessMap:ht.rough, envMapIntensity:1.1});
     const group = new THREE.Group();
-    const nose = new THREE.Mesh(new THREE.ConeGeometry(1.3, 5.2, 4), hull);
+    const nose = new THREE.Mesh(boxUV(new THREE.ConeGeometry(1.3, 5.2, 4)), hull);
     nose.rotation.x = -Math.PI/2;
-    const wing = new THREE.Mesh(new THREE.BoxGeometry(7.5, .3, 2.4), hull);
+    const wing = new THREE.Mesh(boxUV(new THREE.BoxGeometry(7.5, .3, 2.4)), hull);
     wing.position.set(0, -.4, 1.2);
-    const fin = new THREE.Mesh(new THREE.BoxGeometry(.3, 2.4, 1.8), hull);
+    const fin = new THREE.Mesh(boxUV(new THREE.BoxGeometry(.3, 2.4, 1.8)), hull);
     fin.position.set(0, .9, 1.6);
-    const eng = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:0x00f0ff, blending:THREE.AdditiveBlending, depthWrite:false}));   // HDR化はF6のプルーム刷新で扱う(大きな加算スプライトは飽和して輪郭を隠すため)
-    eng.scale.set(4, 4, 1); eng.position.set(0, 0, 3.2);
+    // F6-05: エンジン光は小さく芯だけ(HDR)に。発光の広がりはプルームが担う
+    const eng = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:hdr(0x00f0ff, 1.6), blending:THREE.AdditiveBlending, depthWrite:false}));
+    eng.scale.set(2, 2, 1); eng.position.set(0, 0, 3.2);
     group.add(nose, wing, fin, eng);
-    const nozzles = new THREE.Mesh(mergeGeo([
+    const nozzles = new THREE.Mesh(boxUV(mergeGeo([
       {g:new THREE.CylinderGeometry(.42, .58, 1.3, 12), p:[-1.6, -.15, 2.6], r:[Math.PI/2, 0, 0]},
       {g:new THREE.CylinderGeometry(.42, .58, 1.3, 12), p:[ 1.6, -.15, 2.6], r:[Math.PI/2, 0, 0]},
-    ]), hull);
+    ])), hull);
     const nozzleGlow = new THREE.Mesh(mergeGeo([
       {g:new THREE.CircleGeometry(.34, 14), p:[-1.6, -.15, 3.28]},
       {g:new THREE.CircleGeometry(.34, 14), p:[ 1.6, -.15, 3.28]},
-    ]), new THREE.MeshBasicMaterial({color:0x7df1ff, transparent:true, opacity:.9,
+    ]), new THREE.MeshBasicMaterial({color:hdr(0x7df1ff, 1.8), transparent:true, opacity:.9,
       blending:THREE.AdditiveBlending, depthWrite:false}));
-    const exMat = new THREE.SpriteMaterial({map:starTex, color:0x66e8ff, transparent:true,
-      opacity:.55, blending:THREE.AdditiveBlending, depthWrite:false});
-    const ex1 = new THREE.Sprite(exMat), ex2 = new THREE.Sprite(exMat);
-    ex1.position.set(-1.6, -.15, 4.0); ex2.position.set(1.6, -.15, 4.0);
+    // F6-03: 排気は球状スプライト → プルーム(scale.y が長さ。既存の速度連動・Sortie のコードはそのまま動く)
+    const plumeMat = plumeMaterial();
+    const ex1 = new THREE.Mesh(_plumeGeo, plumeMat), ex2 = new THREE.Mesh(_plumeGeo, plumeMat);
+    ex1.rotation.x = ex2.rotation.x = Math.PI/2;   // +y(長さ) を機体後方 +z へ
+    ex1.position.set(-1.6, -.15, 3.3); ex2.position.set(1.6, -.15, 3.3);
     const tipL = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:hdr(0xff4455, 1.5),
       transparent:true, opacity:.9, blending:THREE.AdditiveBlending, depthWrite:false}));
     const tipR = new THREE.Sprite(new THREE.SpriteMaterial({map:starTex, color:hdr(0x55ff88, 1.5),
@@ -1696,7 +1788,7 @@ vec4 tpS(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy*tpScale)*w.x + t
     tipL.position.set(-3.75, -.4, 1.2); tipR.position.set(3.75, -.4, 1.2);
     tipL.scale.setScalar(1.1); tipR.scale.setScalar(1.1);
     group.add(nozzles, nozzleGlow, ex1, ex2, tipL, tipR);
-    return {group, parts:{nozzles, nozzleGlow, exhaust:[ex1, ex2], tips:[tipL, tipR]}};
+    return {group, parts:{nozzles, nozzleGlow, exhaust:[ex1, ex2], tips:[tipL, tipR], hull, plumeMat}};
   }
   return {deformRock, makeRockTex, mergeGeo, rockGeos, rockMats, buildCore, buildShip,
           rockSurface, setTriplanar, ROCK_TYPES,
@@ -1973,6 +2065,7 @@ const AsteroidRun = (()=>{
   const rockGeos = [], rockMats = [];   // SPEC-03: 岩ジオメトリ/マテリアルの共有プール
   let shipFx = null, cptFx = null;      // SPEC-05: 機体/コックピット装飾の参照
   let bgFx = null, motes = null;        // SPEC-06: 遠景/塵レイヤー
+  let nearDust = null;                  // SPEC-09f: 近傍ダスト
   let headlight = null, hlTarget = null;   // 機体前方を照らすヘッドライト(接近する障害物だけが明るくなる)
   const MOTES_N = IS_TOUCH ? 300 : 600;
   let shardsBudget = 0;                 // SPEC-06 PRF: 品質段階で可変(0=buildで初期化)
@@ -2058,15 +2151,21 @@ const AsteroidRun = (()=>{
     S.add(dust);
 
     // SPEC-06 BG: 遠景惑星(バイオレット系・フォグ対象外)+リング — 進行方向のランドマーク
-    const bgPlanet = new THREE.Mesh(new THREE.SphereGeometry(140, 28, 22),
-      new THREE.MeshStandardMaterial({color:0x5b46c8, emissive:0x180f40, roughness:.85, metalness:.1, fog:false}));
+    // SPEC-09f F6-08: 自発光を撤去して主光で昼夜の境界を出し、フレネルの大気縁光を外殻に重ねる
+    const bgPlanet = new THREE.Mesh(new THREE.SphereGeometry(140, 48, 32),
+      new THREE.MeshStandardMaterial({color:0x5b46c8, roughness:.9, metalness:0, envMapIntensity:.2, fog:false}));
     bgPlanet.position.set(-270, -70, -1370);
+    const bgAtmo = new THREE.Mesh(new THREE.SphereGeometry(149, 48, 32), new THREE.ShaderMaterial({
+      transparent:true, blending:THREE.AdditiveBlending, side:THREE.BackSide, depthWrite:false, fog:false,
+      vertexShader:`varying vec3 n; varying vec3 v; void main(){ n = normalize(normalMatrix*normal); vec4 mv = modelViewMatrix*vec4(position, 1.); v = normalize(-mv.xyz); gl_Position = projectionMatrix*mv; }`,
+      fragmentShader:`varying vec3 n; varying vec3 v; void main(){ float f = pow(1. - abs(dot(n, v)), 3.); gl_FragColor = vec4(vec3(.55, .45, 1.)*f*1.4, f); }`}));
+    bgAtmo.position.copy(bgPlanet.position);
     const bgRing = new THREE.Mesh(new THREE.RingGeometry(180, 262, 48),
       new THREE.MeshBasicMaterial({color:0x8f7bff, transparent:true, opacity:.26, side:THREE.DoubleSide,
         blending:THREE.AdditiveBlending, depthWrite:false, fog:false}));
     bgRing.position.copy(bgPlanet.position);
     bgRing.rotation.set(1.15, .3, 0);
-    S.add(bgPlanet, bgRing);
+    S.add(bgPlanet, bgAtmo, bgRing);
     // 塵レイヤー: スピードラインより遅い層速度で視差を作る(BG-02)
     const mGeo = new THREE.BufferGeometry();
     const mp = new Float32Array(MOTES_N*3);
@@ -2078,7 +2177,17 @@ const AsteroidRun = (()=>{
       transparent:true, opacity:.35, depthWrite:false, blending:THREE.AdditiveBlending}));
     motes.frustumCulled = false;
     S.add(motes);
-    bgFx = {planet: bgPlanet, ring: bgRing};
+    bgFx = {planet: bgPlanet, ring: bgRing, atmo: bgAtmo};
+    // SPEC-09f F6-09: 近傍ダスト(機体の近くだけを流れる微粒子。近いほど明るい=照らされて見える)
+    const ND = IS_TOUCH ? 60 : 120;
+    const ndGeo = new THREE.BufferGeometry();
+    ndGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ND*6), 3));
+    ndGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(ND*6), 3));
+    nearDust = new THREE.LineSegments(ndGeo, new THREE.LineBasicMaterial({vertexColors:true, transparent:true,
+      blending:THREE.AdditiveBlending, depthWrite:false, fog:false}));
+    nearDust.frustumCulled = false;
+    nearDust.userData = {count: ND, p: Array.from({length: ND}, ()=>({x:(Math.random()-.5)*50, y:(Math.random()-.5)*36, z:-40 + Math.random()*54}))};
+    S.add(nearDust);
     shardsBudget = SHARDS_PER_BOOM;
 
     buildFxPool();
@@ -2580,7 +2689,14 @@ const AsteroidRun = (()=>{
     if(shipFx && st){
       const k = Math.min(1, Math.max(0, (st.speed - 110)/370));
       for(const e of shipFx.exhaust){ e.scale.set(.9 + .6*k, 1.6 + 3.2*k, 1); }
-      shipFx.exhaust[0].material.opacity = .4 + .55*k;   // 共有マテリアル(SHP-02)
+      shipFx.plumeMat.uniforms.strength.value = .45 + .55*k;   // SPEC-09f: プルームの濃さも速度連動
+      shipFx.plumeMat.uniforms.time.value += dt;
+      // SPEC-09f F6-06: 被弾時の外板スパーク(橙の発光が0.25秒で消える)
+      if(st.hullGlow > 0){
+        st.hullGlow = Math.max(0, st.hullGlow - dt);
+        shipFx.hull.emissive.setHex(0xff7a2a); shipFx.hull.emissiveIntensity = 1.6*st.hullGlow/.25;
+      }
+      if(!(st.hullGlow > 0) && shipFx.hull.emissive.getHex() !== 0){ shipFx.hull.emissive.setHex(0); shipFx.hull.emissiveIntensity = 1; }
     }
     for(const m of cores){
       if(!m.userData.ring1) continue;
@@ -2752,9 +2868,10 @@ const AsteroidRun = (()=>{
     if(IS_TOUCH) gameLayer.classList.add('touch-fire');   // タッチ端末はFIREボタンを表示
     st = {dist:0, cores:2, shields:3, speed:110, inv:0,   // 初期コア2個(機関砲の試射用)
       // SPEC-09e: 積み上げ点・コンボ・ヒットストップ・FOVキック・内訳
-      score:0, combo:0, comboT:0, mult:1, maxCombo:0, hitStop:0, fovKick:0, nmFlash:0,
+      score:0, combo:0, comboT:0, mult:1, maxCombo:0, hitStop:0, fovKick:0, nmFlash:0, hullGlow:0,
       tally:{near:{n:0, pts:0}, kill:{n:0, pts:0}, core:{n:0}}};
     document.getElementById('g-pop').innerHTML = '';
+    if(shipFx){ shipFx.hull.emissive.setHex(0); shipFx.hull.emissiveIntensity = 1; }   // 被弾の点灯中に終了した場合の持ち越しを消す
     shake = 0;
     lastFire = 0; noCoreUntil = 0;
     clearFx();
@@ -2777,6 +2894,8 @@ const AsteroidRun = (()=>{
   function hit(now, m){
     st.shields--; st.inv = now + 1600;
     st.combo = 0; st.mult = 1; st.hitStop = .08;   // SPEC-09e: コンボ切れ+ヒットストップ
+    st.hullGlow = .25;                              // SPEC-09f: 外板スパーク
+    if(shipFx){ shipFx.hull.emissive.setHex(0xff7a2a); shipFx.hull.emissiveIntensity = 1.6; }
     buzz(70);
     SoundEngine.impact(st.shields <= 0);   // シールド切れ(CRITICAL)は警告ブザー付き
     glitchUntil = now + 300;                // 計器グリッチ(FX-06)
@@ -2951,6 +3070,23 @@ const AsteroidRun = (()=>{
     if(bgFx) bgFx.ring.rotation.z += dt*.01;
     // レティクルの色・透明度は常時固定(薄いシアン / opacity 0.12) — ロックは位置と拡縮のみで表現
 
+    if(nearDust){   // SPEC-09f: 近傍ダスト(機体の周囲に留まり、速度方向へ伸びる)
+      const U = nearDust.userData, pa = nearDust.geometry.attributes.position.array, ca = nearDust.geometry.attributes.color.array;
+      const n = nearDust.geometry.drawRange.count === Infinity ? U.count : Math.min(U.count, nearDust.geometry.drawRange.count/2);
+      const stretch = .4 + st.speed*.012, mv = st.speed*simDt;
+      for(let i = 0; i < U.count; i++){
+        const q = U.p[i];
+        q.z += mv;
+        if(q.z > 14){ q.z -= 54; q.x = (Math.random()-.5)*50; q.y = (Math.random()-.5)*36; }
+        const x = ship.position.x + q.x, y = ship.position.y + q.y, z = ship.position.z + q.z;
+        const b = i < n ? Math.max(0, 1 - Math.hypot(q.x, q.y*1.2, q.z)/30)*.9 : 0;
+        pa[i*6] = x; pa[i*6+1] = y; pa[i*6+2] = z; pa[i*6+3] = x; pa[i*6+4] = y; pa[i*6+5] = z + stretch;
+        ca[i*6] = ca[i*6+1] = ca[i*6+2] = b; ca[i*6+3] = ca[i*6+4] = ca[i*6+5] = b*.15;
+      }
+      nearDust.geometry.attributes.position.needsUpdate = true;
+      nearDust.geometry.attributes.color.needsUpdate = true;
+    }
+    if(grade) grade.uniforms.time.value = now*.001;   // SPEC-09f: 粒状ノイズの時間変化
     dust.material.opacity = .45 + st.nmFlash*.4;   // SPEC-09e: ニアミスで流線を一瞬増光
     st.nmFlash = Math.max(0, st.nmFlash - dt*3);
     const dp = dust.geometry.attributes.position.array;
@@ -3133,6 +3269,15 @@ const AsteroidRun = (()=>{
       const url = snap ? R.domElement.toDataURL('image/jpeg', .85) : undefined;   // 目視確認用
       const buf = readAll();
       const st = lumStats(buf, rockMask(o=>asts.includes(o)));
+      // SPEC-09f F6-07: 機体シルエット内の飽和(排気が輪郭を覆っていないか)
+      if(v === 'chase'){
+        const isShip = o=>{ for(let q = o; q; q = q.parent) if(q === ship) return true; return false; };
+        const sm = rockMask(isShip);
+        let n = 0, hot = 0, total = 0;
+        for(let i = 0; i < buf.length; i += 16){ total++; if(sm[i] > 128){ n++;
+          if((.2126*buf[i] + .7152*buf[i+1] + .0722*buf[i+2])/255 > .95) hot++; } }
+        st.shipPx = +(n/total*100).toFixed(2); st.shipBlownPct = n ? +(hot/n*100).toFixed(2) : null;
+      }
       if(url) st.url = url;
       return st; });
   }
@@ -3179,6 +3324,8 @@ const AsteroidRun = (()=>{
     }
     shardsBudget = level >= 2 ? Math.max(2, SHARDS_PER_BOOM >> 1) : SHARDS_PER_BOOM;
     setShadows(level < 1 && !IS_TOUCH);   // SPEC-09d: L1で影OFF(SPは常にOFF)
+    if(grade){ grade.uniforms.grain.value = level >= 1 ? 0 : .016; grade.uniforms.ca.value = level >= 1 ? 0 : .0016; }   // SPEC-09f: L1で粒状/色収差OFF
+    if(nearDust) nearDust.geometry.setDrawRange(0, (level >= 2 ? nearDust.userData.count >> 1 : nearDust.userData.count)*2);
     Assets.setTriplanar(level < 2);        // SPEC-09d: L2でトライプラナー → 通常UV
     if(motes) motes.geometry.setDrawRange(0, level >= 2 ? MOTES_N/2 : MOTES_N);
   }
@@ -3240,6 +3387,7 @@ const AsteroidRun = (()=>{
       get director(){ return director; },                                   // SPEC-09c
       collideSd: (now, sd, inv)=>collide(now, sd, inv), addScore, stepCombo, score, destroyRock,   // SPEC-09e
       buzz: ms=>buzz(ms, true), fov: ()=>C.fov, hud,
+      shipParts2: shipFx, bgFx, nearDust,   // SPEC-09f
       collide: (now, measureOnly)=>{
         if(!measureOnly) return collide(now, 0);
         Assets.shipSpheresWorld(ship, shipSph);   // 性能計測用: 奥行きの除外なしで全岩を精査(最悪ケース)
@@ -3343,6 +3491,7 @@ const Guide = (()=>{
     }
     const ex = .9 + Math.sin(t*46)*.08;   // 排気の脈動(t純関数)
     sortie.parts.exhaust.forEach(e=>e.scale.set(.9, 1.6*ex, 1));
+    sortie.parts.plumeMat.uniforms.time.value = t;   // SPEC-09f: プルームの揺らぎもtの純関数(逆再生で同じ見た目)
     const clear = sortie.clear ? sm(t, sortie.clear.a, sortie.clear.b) : 0;   // 帯を抜ける(E3-03)
     for(const m of sortie.rocks){   // 自転もtの純関数(逆再生対応)
       m.rotation.y = m.userData.u.a + t*m.userData.u.sp*4;
