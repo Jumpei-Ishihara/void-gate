@@ -26,6 +26,12 @@
   while(q.length){ const i = q.pop(); boxes.forEach((b, j)=>{ if(!seen.has(j) && b.intersectsBox(boxes[i])){ seen.add(j); q.push(j); } }); }
   t('S-T02 浮いた部品がない(連結)', solid.length >= 5 && seen.size === solid.length, `${seen.size}/${solid.length}`);
 
+  // S-T11: 垂直尾翼は中央に1枚(ユーザーFB: 2枚は違和感)
+  const tailM = P.tail;
+  const tb = tailM && new T.Box3().setFromObject(tailM);
+  t('S-T11 垂直尾翼は中央に1枚', tailM && Math.abs((tb.min.x + tb.max.x)/2) < .02 && (tb.max.x - tb.min.x) < .3 && tb.max.y > 1.1,
+    tb ? `中心x=${((tb.min.x + tb.max.x)/2).toFixed(2)} 厚み=${(tb.max.x - tb.min.x).toFixed(2)} 高さ=${tb.max.y.toFixed(2)}` : 'なし');
+
   // S-T03: 外形寸法
   const bb = new T.Box3(); solid.forEach(m=>bb.expandByObject(m));
   const W = bb.max.x - bb.min.x, L = bb.max.z - bb.min.z, H = bb.max.y - bb.min.y;

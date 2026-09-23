@@ -1709,16 +1709,15 @@ vec4 tpS(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy*tpScale)*w.x + t
   const SHIP_SPHERES = [
     {name:'nose',   c:[0, .02, -2.35], c2:[0, .08, -.2],  r:.66},   // 機首〜キャノピー・機首下の機銃
     {name:'body',   c:[0, .08, -.2],   c2:[0, .1, 2.85],  r:.85},   // 胴体後半
-    {name:'nacL',   c:[-1.55, -.18, .2], c2:[-1.55, -.18, 3.3], r:.58},
-    {name:'nacR',   c:[ 1.55, -.18, .2], c2:[ 1.55, -.18, 3.3], r:.58},
+    {name:'nacL',   c:[-1.55, -.18, .2], c2:[-1.55, -.18, 3.3], r:.62},
+    {name:'nacR',   c:[ 1.55, -.18, .2], c2:[ 1.55, -.18, 3.3], r:.62},
     {name:'rootL',  c:[-.9, -.18, -.35], c2:[-2.9, -.32, 1.2], r:.35},   // 主翼の前縁
     {name:'rootR',  c:[ .9, -.18, -.35], c2:[ 2.9, -.32, 1.2], r:.35},
     {name:'trailL', c:[-.9, -.18, 2.6],  c2:[-2.9, -.32, 2.2], r:.35},  // 主翼の後縁
     {name:'trailR', c:[ .9, -.18, 2.6],  c2:[ 2.9, -.32, 2.2], r:.35},
     {name:'wingL',  c:[-3.25, -.38, 1.78], r:.72},                   // 翼端
     {name:'wingR',  c:[ 3.25, -.38, 1.78], r:.72},
-    {name:'tailL',  c:[-.93, 1.0, 2.62], r:.54},                     // 垂直尾翼
-    {name:'tailR',  c:[ .93, 1.0, 2.62], r:.54}];
+    {name:'tail',   c:[0, .9, 2.45], c2:[0, 1.36, 2.72], r:.52}];     // 垂直尾翼(中央1枚)
   const HIT_LENIENCY = .9;   // F1-04: 機体球の半径に乗算(見た目より少し甘く)
   function shipSpheresWorld(ship, out){
     ship.updateMatrixWorld();
@@ -1857,13 +1856,13 @@ vec4 tpS(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy*tpScale)*w.x + t
              {z:.25, w:.24, top:.62, bot:.05, p:.9}, {z:.55, w:.12, top:.52, bot:.05, p:.9}],   // 下半分は胴体に埋まる
     canopyTip: [0, .30, -1.6],
     // エンジンナセル(左右 x=±1.55)
-    nac: [{z:.15, w:.32, top:.32, bot:.32, cy:-.18, p:1}, {z:.55, w:.50, top:.50, bot:.50, cy:-.18, p:1},
-          {z:1.40, w:.57, top:.57, bot:.57, cy:-.18, p:1}, {z:2.30, w:.55, top:.55, bot:.55, cy:-.18, p:1},
-          {z:2.95, w:.47, top:.47, bot:.47, cy:-.18, p:1}],
+    nac: [{z:.15, w:.34, top:.34, bot:.34, cy:-.18, p:1}, {z:.55, w:.54, top:.54, bot:.54, cy:-.18, p:1},
+          {z:1.40, w:.62, top:.62, bot:.62, cy:-.18, p:1}, {z:2.30, w:.60, top:.60, bot:.60, cy:-.18, p:1},
+          {z:2.95, w:.52, top:.52, bot:.52, cy:-.18, p:1}],
     // 主翼の平面形(右翼, x-z)
     wing: [[.70, -.55], [3.75, 1.45], [3.75, 2.05], [2.25, 2.35], [.70, 2.75]],
-    // 尾翼の側面形(z-y)
-    tail: [[1.55, 0], [2.45, 1.15], [2.85, 1.15], [2.95, 0]],
+    // 垂直尾翼の側面形(z-y)。中央に1枚(ユーザーFB: 双尾翼は違和感)
+    tail: [[1.2, 0], [2.35, 1.38], [2.9, 1.38], [3.02, 0]],
     muzzles: [[-.45, -.36, -2.05], [.45, -.36, -2.05]]   // 機首下(チン)の機銃2門
   };
   // opts.glow: ノズル光の強さ(ゲームは遠景の後方から見るため1.8、サイトは近接で正対するため既定1.4)
@@ -1888,15 +1887,11 @@ vec4 tpS(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy*tpScale)*w.x + t
       return g;
     };
     const wings = new THREE.Mesh(boxUV(mergeGeo([{g: wingGeo(1)}, {g: wingGeo(-1)}])), hull);
-    // 双垂直尾翼(外側へ傾ける)
-    const tailGeo = side=>{
-      const g = plate(SHIP.tail, .06, .025);
-      g.rotateY(-Math.PI/2);                       // 側面形の x → 機体 z、押し出し → 機体 x
-      g.rotateZ(-side*.32);
-      g.translate(side*.62, .26, 0);
-      return g;
-    };
-    const tails = new THREE.Mesh(boxUV(mergeGeo([{g: tailGeo(1)}, {g: tailGeo(-1)}])), hull);
+    // 垂直尾翼(中央に1枚)
+    const tailG = plate(SHIP.tail, .08, .03);
+    tailG.rotateY(-Math.PI/2);                     // 側面形の x → 機体 z、押し出し → 機体 x(厚み)
+    tailG.translate(.04, .28, 0);                  // 厚みの中心を機体中心線に合わせ、胴体上面に埋める
+    const tail = new THREE.Mesh(boxUV(tailG.toNonIndexed ? tailG.toNonIndexed() : tailG), hull);
     // エンジンナセル(左右を1メッシュに)
     const nacelles = new THREE.Mesh(boxUV(mergeGeo([{g: loft(SHIP.nac, {cx: 1.55, p: 1})}, {g: loft(SHIP.nac, {cx: -1.55, p: 1})}])), hull);
     // キャノピー
@@ -1910,10 +1905,10 @@ vec4 tpS(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy*tpScale)*w.x + t
       {g:new THREE.CylinderGeometry(.04, .04, .65, 8), p:[-.45, -.36, -1.72], r:[Math.PI/2, 0, 0]},
       {g:new THREE.CylinderGeometry(.04, .04, .65, 8), p:[ .45, -.36, -1.72], r:[Math.PI/2, 0, 0]},
     ]), dark);
-    group.add(fuselage, wings, tails, nacelles, canopy, darkParts);
+    group.add(fuselage, wings, tail, nacelles, canopy, darkParts);
     const nozzles = new THREE.Mesh(mergeGeo([   // ノズル(後端でわずかに広がる)
-      {g:new THREE.CylinderGeometry(.44, .40, .45, 16, 1, true), p:[-1.55, -.18, 3.12], r:[Math.PI/2, 0, 0]},
-      {g:new THREE.CylinderGeometry(.44, .40, .45, 16, 1, true), p:[ 1.55, -.18, 3.12], r:[Math.PI/2, 0, 0]},
+      {g:new THREE.CylinderGeometry(.48, .44, .45, 16, 1, true), p:[-1.55, -.18, 3.12], r:[Math.PI/2, 0, 0]},
+      {g:new THREE.CylinderGeometry(.48, .44, .45, 16, 1, true), p:[ 1.55, -.18, 3.12], r:[Math.PI/2, 0, 0]},
     ]), new THREE.MeshStandardMaterial({color:0x1b1e24, metalness:.8, roughness:.38, side:THREE.DoubleSide}));
     const nozzleGlow = new THREE.Mesh(mergeGeo([
       {g:new THREE.CircleGeometry(.34, 16), p:[-1.55, -.18, 3.2]},
@@ -1934,7 +1929,7 @@ vec4 tpS(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy*tpScale)*w.x + t
     tipL.scale.setScalar(.9); tipR.scale.setScalar(.9);
     group.add(nozzles, nozzleGlow, ex1, ex2, tipL, tipR);
     return {group, parts:{nozzles, nozzleGlow, exhaust:[ex1, ex2], tips:[tipL, tipR], hull, plumeMat,
-      fuselage, canopy, muzzles: SHIP.muzzles}};
+      fuselage, canopy, tail, muzzles: SHIP.muzzles}};
   }
   return {deformRock, makeRockTex, mergeGeo, rockGeos, rockMats, buildCore, buildShip,
           rockSurface, setTriplanar, ROCK_TYPES,
