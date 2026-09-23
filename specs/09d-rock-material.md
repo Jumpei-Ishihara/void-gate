@@ -1,6 +1,6 @@
 # SPEC 09d — Phase F4: 岩マテリアル刷新（法線・粗さ・トライプラナー・岩種・影）
 
-状態: **Draft** ／ 親: [SPEC-09](09-realism-gameplay-policy.md) R2 ／ 前提: F2 Verified（Look / 輝度プローブ） ／ 外部素材: 不要
+状態: **Verified (2026-09-23 phaseF4 18/18・run-all 16スイート259テスト ALL GREEN。PC L0 描画 約1.7ms)** ／ 親: [SPEC-09](09-realism-gameplay-policy.md) R2 ／ 前提: F2 Verified（Look / 輝度プローブ） ／ 外部素材: 不要
 
 ## 1. 目的
 
@@ -64,7 +64,7 @@ vec4 tp(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.yz*TP_SCALE)*w.x + t
 //                              mat3(viewMatrix * modelMatrix) で視空間へ（fragment に modelMatrix を宣言）
 ```
 
-- `TP_SCALE = .9`（岩の単位半径あたり約 1 タイル）
+- `TP_SCALE = .42`（実装時に .9 から改訂 → §4.1）
 - `#define TRIPLANAR` の有無で通常 UV サンプリングに戻せる（F4-07 の L2 縮退）
 - `customProgramCacheKey` を設定し、define 切替時にシェーダが正しく再コンパイルされるようにする
 - 初回コンパイルのスタッター対策: 既存のシェーダウォームアップ（build 末尾の composer.render）で岩も1回描く
@@ -97,6 +97,16 @@ key.target.position.copy(ship.position);
 | F4-T08 | 輝度プローブ: 基準 ±20% を維持（F2-T08 と同条件） |
 | F4-T09 | サイトの Sortie 岩も新材質（`Assets.rockMats()` と同一参照） |
 | F4-T10 | draw call: PC L0 ≤ 155、SP ≤ 140 |
+
+### 4.1 実装時の判断・知見
+
+- **F4-T04 の検証方法**: 「uv 属性を消した岩」を一様な半球光で描き、模様の分散で判定（トライプラナー 43.6 / 通常UV 0.0）。
+  `material.clone()` は `onBeforeCompile` と独自 define を引き継がないため、実物の材質を `Assets.setTriplanar` で切り替えて測る
+- **トライプラナーの縮尺**: 当初案 `.9` は UV 貼り（周長 1 タイル）比で模様が約 5 倍細かくなるため **`.42`** とした
+- **継ぎ目**: 高さマップは端をまたぐ円を反対側にも描いてタイル化（Sobel も折り返し）。トライプラナーの繰り返しで線が出ない
+- **輝度プローブの不具合修正**: F3 以降コアは未使用時に非表示になるため、プローブがコアの表示状態を固定しておらず、
+  ページの履歴によって岩の黒つぶれ率が 3% ⇔ 8% と揺れていた（コアの加算光が近くの岩に乗るか否か）。プローブでコア1個の表示を明示して解消
+- 実測: 岩の平均輝度 ゲーム 0.314 / 0.328（F2前 0.211 / 0.214）、岩の黒つぶれ 2.2% / 4.2%。描画 PC L0 約 1.7ms/フレーム
 
 ## 5. 既存テストの改訂
 

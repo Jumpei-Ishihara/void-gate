@@ -19,7 +19,8 @@
   const rk = D.rocks;
   t('AST-01 ジオメトリ8種プール', rk && rk.distinctGeos >= 8, 'distinct='+(rk&&rk.distinctGeos));
   t('AST-01b 頂点変位(個体差)', rk && rk.radiusSpread > .15, 'spread='+(rk&&rk.radiusSpread));
-  t('AST-03 テクスチャ適用', rk && rk.hasMap && rk.hasBump);
+  // SPEC-09d改訂: bump → 法線+粗さマップ
+  t('AST-03 テクスチャ適用', rk && rk.hasMap && rk.hasNormal && rk.hasRough);
   t('AST-04 色3系統', rk && rk.distinctColors >= 3, 'colors='+(rk&&rk.distinctColors));
   t('AST-05 自転パラメータ', rk && rk.spinOk);
   t('AST-06 当たり半径維持', rk && rk.rOk);

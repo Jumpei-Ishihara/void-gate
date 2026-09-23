@@ -96,7 +96,9 @@
   D2.composer.render();
   const calls = RD.info.render.calls;
   RD.info.autoReset = true;
-  t('BUDGET draw calls≤140', calls <= 140, 'calls='+calls+' (基準110+30)');
+  // SPEC-09d改訂: PCのQuality L0は影パス分(キャスター8+機体)を加えて ≤155、SPは影なしで ≤140
+  const cap = V.isTouch ? 140 : 155;
+  t('BUDGET draw calls≤'+cap, calls <= cap, 'calls='+calls+' (基準110+30'+(V.isTouch ? '' : '+影15')+')');
 
   const t0 = performance.now();
   for(let i = 0; i < 60; i++) D2.composer.render();

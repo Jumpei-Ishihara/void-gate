@@ -93,7 +93,8 @@
   // F2-T12: draw call 予算
   GR.info.autoReset = false; GR.info.reset(); D.composer.render();
   const calls = GR.info.render.calls; GR.info.autoReset = true;
-  t('F2-T12 draw calls≤140', calls <= 140, 'calls=' + calls);
+  const cap = V.isTouch ? 140 : 155;   // SPEC-09d改訂: PC L0 は影パス分を加算
+  t('F2-T12 draw calls≤' + cap, calls <= cap, 'calls=' + calls);
 
   // 岩の識別子(phase3 LIGHT 改訂の前提)
   t('F2-T13 岩に userData.isRock', D.asts.every(m=>m.userData.isRock === true));

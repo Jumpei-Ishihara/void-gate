@@ -46,7 +46,8 @@
   D.composer.render();
   const calls = RD.info.render.calls;
   RD.info.autoReset = true;
-  t('BUDGET draw calls≤140', calls <= 140, 'calls='+calls);
+  const cap = V.isTouch ? 140 : 155;   // SPEC-09d改訂: PC L0 は影パス分を加算
+  t('BUDGET draw calls≤'+cap, calls <= cap, 'calls='+calls);
 
   V.closeLayer();
 
