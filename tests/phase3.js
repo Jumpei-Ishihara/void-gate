@@ -48,7 +48,8 @@
   // ---- コックピット(CPT) ----
   const cp = D2.cockpitParts;
   t('CPT-01 グリーブル12+', cp && cp.greebles >= 12, 'greebles='+(cp&&cp.greebles));
-  t('CPT-02 ベゼル', cp && cp.bezels >= 3, 'bezels='+(cp&&cp.bezels));
+  // SPEC-13 改訂: 計器3面(ベゼル)を撤去 → 筐体数(メーター・レーダー投影器・操縦桿の台座)で検証
+  t('CPT-02 筐体/ベゼル', cp && cp.bezels >= 3, 'bezels='+(cp&&cp.bezels));
   t('CPT-03 ランプ非同期', cp && cp.lamps >= 3 && cp.lampPhasesDistinct, 'lamps='+(cp&&cp.lamps));
   // CPT-04 非常灯
   D2.stRef.shields = 0; D2.stepVisual(.3);

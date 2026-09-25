@@ -2284,7 +2284,7 @@ Meta.cleanupDaily();
 /* ---------- GAME 1: ASTEROID RUN(探査開始) ---------- */
 const AsteroidRun = (()=>{
   let R, S, C, ship, dust;
-  let cockpit, stick, lever, ret, retMat, dcv, dctx, dtex;
+  let cockpit, ret, retMat, ck = null;   // ck: SPEC-13 操縦席の部品と状態
   let composer, afterimage, bloom, grade, hudS, hudRig, gameRig;
   const BLOOM_BASE = .45;   // SPEC-09b: HDR基準のブルーム強度
   const BLOOM_RES = IS_TOUCH ? .5 : 1;   // SPは半解像度(BLM-04)
@@ -2456,100 +2456,163 @@ const AsteroidRun = (()=>{
     P.flashes[0].userData.light.intensity = 0;
   }
 
-  /* --- コックピット(操縦席) --- */
+  /* --- コックピット(操縦席) — SPEC-13 K1: 計器台・キャノピー・中央操縦桿・スピードメーター・投影レーダー --- */
+  const CANVAS_Q = IS_TOUCH ? .6 : 1;   // SPはキャンバス解像度を下げる(K-R15)
+  const CK = {
+    dash:  {r0: 1.05, r1: 1.25, h: .4, y: -.78, arc: 2.1, topY: -.58, topIn: .74},
+    bow:   {r: 3.0, tube: .03, y: -1.0, z: -1.95, arc: 2.9},   // 頭上を越える大きな弧。FOV84°でも中央域(K-R02)に掛からず、左右の側枠として見える
+    glass: {r: 2.3, y: -.2, phi: [Math.PI*1.5 - 1.5, 3.0], theta: [.25, 1.6], grid: [18, 9]},
+    stick: {pos: [0, -.76, -.55], scale: 1.3, kx: .45, kz: .5, trigger: .08},
+    meter: {pos: [-.44, -.51, -.9], rot: [-.35, .32, 0],   // 筐体の下端を計器台に埋め込み、上端は FOV84° でも中央域(K-R02)の外
+            scale: IS_TOUCH ? 1.0 : .8, canvas: [540, 300], plane: [.54, .3]},
+    radar: {pos: [.46, -.47, -.92], rot: [-1.0, 0, -.25], size: .36, canvas: 256},   // 下端を計器台の上面より上に
+    glowK: 1.6,   // 発光線のHDR倍率(ブルームは掛かるが白飛びしない上限)
+  };
+  const STATE_COL = ['#00f0ff', '#ffb347', '#ff3b5c'];   // 通常 / シールド1 / シールド0
+  const stateIdx = ()=>!st ? 0 : st.shields <= 0 ? 2 : st.shields === 1 ? 1 : 0;
+  function canvasPanel(cw, ch){
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(cw*CANVAS_Q); cv.height = Math.round(ch*CANVAS_Q);
+    const ctx = cv.getContext('2d'); ctx.scale(CANVAS_Q, CANVAS_Q);
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+    return {cv, ctx, tex, cw, ch};
+  }
+  function glowText(c, txt, x, y, px, col, align = 'center', blur = 10){
+    c.font = `${px}px Orbitron, monospace`; c.textAlign = align; c.textBaseline = 'alphabetic';
+    c.shadowColor = col; c.shadowBlur = blur; c.fillStyle = col; c.fillText(txt, x, y);
+    c.shadowBlur = 0; c.fillStyle = '#fff'; c.globalAlpha = .55; c.fillText(txt, x, y); c.globalAlpha = 1;
+  }
   function buildCockpit(){
     S.add(C);
     cockpit = new THREE.Group();
     C.add(cockpit);
+    const std = o=>new THREE.MeshStandardMaterial(o);
+    const mDash = std({color:0x121821, metalness:.72, roughness:.36, envMapIntensity:.9, side:THREE.DoubleSide});
+    const mFrame = std({color:0x1a202a, metalness:.85, roughness:.28, envMapIntensity:1.1});
+    const mGrip = std({color:0x2c333e, metalness:.35, roughness:.5, envMapIntensity:.9});
+    const mRubber = std({color:0x0d0f13, metalness:.2, roughness:.82});
+    const mMetal = std({color:0x8d96a3, metalness:.9, roughness:.3, envMapIntensity:1.2});
+    const mGlow = new THREE.MeshBasicMaterial({color: new THREE.Color(STATE_COL[0]).multiplyScalar(CK.glowK)});
+    const mRed = new THREE.MeshBasicMaterial({color: new THREE.Color(0xff3b5c).multiplyScalar(1.8)});
 
-    const dark = new THREE.MeshStandardMaterial({color:0x0b1126, metalness:.7, roughness:.45});
-    const metal = new THREE.MeshStandardMaterial({color:0x232c48, metalness:.85, roughness:.3});
-    const cyanGlow = new THREE.MeshBasicMaterial({color:0x17aec4});   // 青かぶり対策で輝度を抑制
-    const magGlow = new THREE.MeshBasicMaterial({color:0xff2ec4});
+    // K-01 計器台: 側面(円筒の一部) + 上面(輪) + 内縁の発光線
+    const D0 = CK.dash, ts = Math.PI - D0.arc/2;
+    const side = new THREE.Mesh(new THREE.CylinderGeometry(D0.r0, D0.r1, D0.h, 72, 1, true, ts, D0.arc), mDash);
+    side.position.y = D0.y;
+    const topG = new THREE.RingGeometry(D0.topIn, D0.r0, 72, 1, Math.PI/2 - D0.arc/2, D0.arc); topG.rotateX(-Math.PI/2);
+    const top = new THREE.Mesh(topG, mDash); top.position.y = D0.topY;
+    const stripG = new THREE.TorusGeometry(D0.topIn + .01, .004, 6, 120, D0.arc);
+    stripG.rotateZ(Math.PI/2 - D0.arc/2); stripG.rotateX(-Math.PI/2);
+    const strip = new THREE.Mesh(stripG, mGlow); strip.position.y = D0.topY + .005;
+    cockpit.add(side, top, strip);
 
-    // 曲面ダッシュボード + 発光トリム(操縦者を包み込むラウンドコンソール)
-    const arc = 1.6, thetaS = Math.PI - arc/2;
-    const dashMat = new THREE.MeshStandardMaterial({color:0x0b1126, metalness:.7, roughness:.45, side:THREE.DoubleSide});
-    const trimMat = new THREE.MeshBasicMaterial({color:0x0d8ea4, side:THREE.DoubleSide});   // 青かぶり対策
-    const dash = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 2.3, .95, 64, 1, true, thetaS, arc), dashMat);
-    dash.position.set(0, -1.42, 0);
-    const trim = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 2.0, .022, 64, 1, true, thetaS, arc), trimMat);
-    trim.position.set(0, -.94, 0);
-    cockpit.add(dash, trim);
+    // CPT-01 グリーブル: 計器台上面の外周・左右6個ずつ(中央域の外)
+    const gDark = [], gMetal = [];
+    for(const sx of [-1, 1]) for(let i = 0; i < 6; i++){
+      const a = sx*(.72 + i*.07), r = .99 + (i%2)*.03, p = [Math.sin(a)*r, D0.topY + .008, -Math.cos(a)*r];
+      if(i%3 === 2) gMetal.push({g: new THREE.CylinderGeometry(.006, .006, .07, 8), p, r: [0, -a, Math.PI/2]});
+      else gDark.push({g: new THREE.BoxGeometry(.035 + (i%2)*.015, .012, .025), p, r: [0, -a, 0]});
+    }
+    cockpit.add(new THREE.Mesh(Assets.mergeGeo(gDark), mDash), new THREE.Mesh(Assets.mergeGeo(gMetal), mMetal));
 
-    // (キャノピーリブは視界を遮るため廃止 — 視界は計器とビネットのみで構成)
-
-    // 操縦桿(入力に連動して傾く)
-    stick = new THREE.Group();
-    stick.position.set(.85, -1.08, -1.12);
-    const sbase = new THREE.Mesh(new THREE.SphereGeometry(.17, 32, 24, 0, Math.PI*2, 0, Math.PI/2), dark);
-    sbase.scale.y = .55;
-    const srod = new THREE.Mesh(new THREE.CylinderGeometry(.035, .05, .52, 24), metal);
-    srod.position.y = .28;
-    const sgrip = new THREE.Mesh(new THREE.CapsuleGeometry(.07, .13, 8, 24), dark);
-    sgrip.position.y = .58;
-    const sring = new THREE.Mesh(new THREE.TorusGeometry(.078, .013, 12, 36), cyanGlow);
-    sring.position.y = .5; sring.rotation.x = Math.PI/2;
-    const sbtn = new THREE.Mesh(new THREE.SphereGeometry(.024, 16, 16), magGlow);
-    sbtn.position.set(0, .66, .045);
-    stick.add(sbase, srod, sgrip, sring, sbtn);
-    cockpit.add(stick);
-
-    // スロットルレバー(速度に連動)
-    lever = new THREE.Group();
-    lever.position.set(-1.02, -1.26, -1.04);
-    lever.rotation.z = -.34;   // 外側へ傾けて計器に被らないように
-    const lrod = new THREE.Mesh(new THREE.CylinderGeometry(.026, .034, .4, 18), metal);
-    lrod.position.y = .2;
-    const lknob = new THREE.Mesh(new THREE.CapsuleGeometry(.05, .11, 8, 20), dark);
-    lknob.position.y = .42; lknob.rotation.z = Math.PI/2;
-    const lring = new THREE.Mesh(new THREE.TorusGeometry(.054, .011, 10, 28), cyanGlow);
-    lring.position.y = .42; lring.rotation.y = Math.PI/2;
-    lever.add(lrod, lknob, lring);
-    cockpit.add(lever);
-
-    // SPEC-05 CPT-01: グリーブル(手置き座標表・視界を遮らない下部/側部限定・材質別に結合)
-    const B = (w,h,d)=>new THREE.BoxGeometry(w,h,d);
-    const CY = (r,h)=>new THREE.CylinderGeometry(r,r,h,10);
-    const gDark = [
-      {g:B(.16,.05,.10), p:[-.42,-1.12,-1.40], r:[-.28,0,0]},
-      {g:B(.22,.04,.12), p:[ .40,-1.13,-1.41], r:[-.28,0,0]},
-      {g:B(.10,.06,.10), p:[-1.22,-1.02,-1.02], r:[-.2,.5,0]},
-      {g:B(.12,.05,.14), p:[ 1.24,-1.00,-1.00], r:[-.2,-.5,0]},
-      {g:B(.30,.035,.09), p:[0,-1.10,-1.52], r:[-.30,0,0]},
-      {g:B(.09,.05,.09), p:[-.20,-1.14,-1.46], r:[-.28,0,0]},
-      {g:B(.09,.05,.09), p:[ .20,-1.14,-1.46], r:[-.28,0,0]},
-      {g:B(.14,.04,.08), p:[-.85,-1.06,-1.28], r:[-.24,.35,0]},
-      {g:B(.14,.04,.08), p:[ .85,-1.06,-1.28], r:[-.24,-.35,0]},
-    ];
-    const gMetal = [
-      {g:CY(.018,.5), p:[-1.05,-1.18,-1.20], r:[0,0,1.35]},
-      {g:CY(.018,.5), p:[ 1.05,-1.18,-1.20], r:[0,0,-1.35]},
-      {g:CY(.025,.24), p:[-.62,-1.10,-1.38], r:[1.25,0,0]},
-      {g:CY(.025,.24), p:[ .62,-1.10,-1.38], r:[1.25,0,0]},
-      {g:CY(.015,.42), p:[0,-1.05,-1.56], r:[0,0,Math.PI/2]},
-      {g:B(.05,.05,.05), p:[-1.30,-1.10,-.88], r:[0,.5,0]},
-      {g:B(.05,.05,.05), p:[ 1.30,-1.10,-.88], r:[0,-.5,0]},
-    ];
-    cockpit.add(new THREE.Mesh(Assets.mergeGeo(gDark), dark), new THREE.Mesh(Assets.mergeGeo(gMetal), metal));
-
-    // CPT-03: 非同期明滅インジケータ(位相ずらし) + CPT-04: CRITICAL赤色非常灯
+    // CPT-03 非同期明滅ランプ(上面の外周)
     const lamps = [];
-    [[-.34,-1.115,-1.415,0], [-.27,-1.13,-1.44,1.3], [.30,-1.115,-1.415,2.6]].forEach(([x,y,z,ph])=>{
-      const L = new THREE.Mesh(new THREE.PlaneGeometry(.05,.05),
-        new THREE.MeshBasicMaterial({color:0x2fb9cf, transparent:true, opacity:.4,
-          blending:THREE.AdditiveBlending, depthWrite:false}));
-      L.position.set(x, y, z); L.rotation.x = -.3;
+    [[-.15, 0], [.12, 1.3], [.25, 2.6]].forEach(([a, ph])=>{
+      const L = new THREE.Mesh(new THREE.PlaneGeometry(.022, .022),
+        new THREE.MeshBasicMaterial({color:0x2fb9cf, transparent:true, opacity:.4, blending:THREE.AdditiveBlending, depthWrite:false}));
+      L.position.set(Math.sin(a), D0.topY + .003, -Math.cos(a)); L.rotation.set(-Math.PI/2, 0, -a);
       L.userData.ph = ph;
       cockpit.add(L); lamps.push(L);
     });
-    const alertLamp = new THREE.Mesh(new THREE.BoxGeometry(.07,.035,.03),
-      new THREE.MeshBasicMaterial({color:0xff2040, transparent:true, opacity:.12}));
-    alertLamp.position.set(.44, -1.10, -1.43); alertLamp.rotation.x = -.28;
+
+    // K-02 キャノピー: 金属の枠 + フレネルと継ぎ目の格子のガラス(全天周囲モニターの質感)
+    const B0 = CK.bow, bowG = new THREE.TorusGeometry(B0.r, B0.tube, 10, 96, B0.arc);
+    bowG.rotateZ(Math.PI/2 - B0.arc/2);
+    const bow = new THREE.Mesh(bowG, mFrame); bow.position.set(0, B0.y, B0.z);
+    const G0 = CK.glass;
+    const glass = new THREE.Mesh(new THREE.SphereGeometry(G0.r, 48, 32, G0.phi[0], G0.phi[1], G0.theta[0], G0.theta[1]), new THREE.ShaderMaterial({
+      side:THREE.BackSide, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+      uniforms:{grid:{value:new THREE.Vector2(...G0.grid)}},
+      vertexShader:`varying vec3 n; varying vec3 v; varying vec2 u; void main(){ u = uv; n = normalize(normalMatrix*normal); vec4 mv = modelViewMatrix*vec4(position, 1.); v = normalize(-mv.xyz); gl_Position = projectionMatrix*mv; }`,
+      fragmentShader:`uniform vec2 grid; varying vec3 n; varying vec3 v; varying vec2 u;
+        void main(){ float f = pow(1. - abs(dot(n, v)), 3.);
+          vec2 q = abs(fract(u*grid) - .5); float g = smoothstep(.49, .5, max(q.x, q.y))*.05;
+          float a = f*.35 + g; gl_FragColor = vec4(vec3(.5, .8, 1.)*a, a); }`}));
+    glass.position.y = G0.y;
+    cockpit.add(bow, glass);
+
+    // K-03 操縦桿(画面下中央・入力に連動して傾く)
+    const K = CK.stick;
+    const stickPivot = new THREE.Group(); stickPivot.position.set(...K.pos);
+    const body = new THREE.Group(); body.scale.setScalar(K.scale);
+    const grp = new THREE.Group(); grp.rotation.x = -.18;   // グリップの前傾
+    body.add(grp);
+    const at = (geo, parent, x, y, z, rx = 0, ry = 0, rz = 0)=>{ const o = new THREE.Mesh(geo); o.position.set(x, y, z); o.rotation.set(rx, ry, rz); parent.add(o); return o; };
+    const prof = [[0, .18], [.026, .18], [.03, .2], [.034, .215], [.031, .228], [.036, .245], [.033, .26], [.037, .278], [.036, .3], [.033, .32], [.036, .34], [.03, .352], [.016, .36], [0, .362]]
+      .map(([r, y])=>new THREE.Vector2(r, y));
+    const latheG = new THREE.LatheGeometry(prof, 28); latheG.scale(1, 1, 1.25);
+    const pRubber = [at(new THREE.CylinderGeometry(.04, .09, .1, 20, 3), body, 0, .05, 0)];
+    const pMetal = [at(new THREE.CylinderGeometry(.013, .017, .1, 16), body, 0, .14, 0),
+      at(new THREE.CylinderGeometry(.009, .011, .014, 12), grp, 0, .374, .006)];
+    const ringG = new THREE.TorusGeometry(.028, .003, 6, 32);
+    const seamG = new THREE.TorusGeometry(.0335, .0016, 6, 32); seamG.scale(1, 1.25, 1);
+    const pGlow = [at(ringG, body, 0, .182, 0, Math.PI/2), at(new THREE.SphereGeometry(.006, 10, 8), grp, 0, .382, .006),
+      at(seamG, grp, 0, .3, 0, Math.PI/2)];
+    const headG = new THREE.CapsuleGeometry(.024, .05, 6, 16); headG.scale(1.15, .75, 1);
+    const pGrip = [at(latheG, grp, 0, 0, 0), at(headG, grp, 0, .352, -.012, Math.PI/2)];
+    const pRed = [at(new THREE.CylinderGeometry(.008, .008, .01, 12), grp, -.03, .35, -.025, 0, 0, Math.PI/2)];
+    const tip = new THREE.Object3D(); tip.position.set(0, .382, 0); grp.add(tip);   // 見かけの位置の計測点
+    body.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(body.matrixWorld).invert();
+    const bakeLocal = list=>Assets.mergeGeo(list.map(o=>({g: o.geometry.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld))})));
+    const merged = [[pRubber, mRubber], [pMetal, mMetal], [pGlow, mGlow], [pGrip, mGrip], [pRed, mRed]].map(([l, m])=>new THREE.Mesh(bakeLocal(l), m));
+    [...pRubber, ...pMetal, ...pGlow, ...pGrip, ...pRed].forEach(o=>o.parent.remove(o));
+    body.add(...merged);
+    // トリガー(発射で引かれる。回転の支点はグリップ前面)
+    const trigger = new THREE.Group(); trigger.position.set(0, .325, -.04); grp.add(trigger);
+    const trigM = new THREE.Mesh(new THREE.CapsuleGeometry(.007, .03, 4, 8), mMetal); trigM.position.set(0, -.015, -.004); trigger.add(trigM);
+    stickPivot.add(body);
+    const stickBase = new THREE.Mesh(new THREE.CylinderGeometry(.13, .16, .03, 32), mFrame);
+    stickBase.position.set(K.pos[0], K.pos[1] - .005, K.pos[2]);
+    cockpit.add(stickPivot, stickBase);
+
+    // K-04 スピードメーター(金属の筐体 + ガラス越しの画面)
+    const M0 = CK.meter;
+    const meterG = new THREE.Group(); meterG.position.set(...M0.pos); meterG.rotation.set(...M0.rot); meterG.scale.setScalar(M0.scale);
+    const arch = new THREE.Shape(); arch.moveTo(-.3, -.14); arch.lineTo(.3, -.14); arch.lineTo(.3, -.06); arch.absarc(0, -.06, .3, 0, Math.PI, false); arch.lineTo(-.3, -.14);
+    const house = new THREE.Mesh(new THREE.ExtrudeGeometry(arch, {depth:.05, bevelEnabled:true, bevelThickness:.012, bevelSize:.012, bevelSegments:2, curveSegments:32}), mFrame);
+    house.position.z = -.05;
+    const mp = canvasPanel(...M0.canvas);
+    const meterMesh = new THREE.Mesh(new THREE.PlaneGeometry(...M0.plane), new THREE.MeshBasicMaterial({map: mp.tex, transparent:true}));
+    meterMesh.position.set(0, .05, .026);   // 筐体の前面(面取り込み z=.012)より手前。文字が計器台に隠れない高さ
+    const meterGlass = new THREE.Mesh(new THREE.PlaneGeometry(.56, .32), std({color:0x0a1418, metalness:.9, roughness:.05, transparent:true, opacity:.12, envMapIntensity:2}));
+    meterGlass.position.set(0, .05, .04);
+    const alertLamp = new THREE.Mesh(new THREE.BoxGeometry(.06, .025, .02), new THREE.MeshBasicMaterial({color:0xff2040, transparent:true, opacity:.12}));
+    alertLamp.position.set(.25, -.12, .026);
+    meterG.add(house, meterMesh, meterGlass, alertLamp);
+    cockpit.add(meterG);
+
+    // K-05 投影レーダー(計器台の上に投影)
+    const RD0 = CK.radar;
+    const rp = canvasPanel(RD0.canvas, RD0.canvas);
+    const radarMesh = new THREE.Mesh(new THREE.PlaneGeometry(RD0.size, RD0.size),
+      new THREE.MeshBasicMaterial({map: rp.tex, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false}));
+    radarMesh.position.set(...RD0.pos); radarMesh.rotation.set(...RD0.rot);
+    const projector = new THREE.Mesh(new THREE.CylinderGeometry(.028, .034, .012, 24), mFrame);
+    projector.position.set(RD0.pos[0], D0.topY + .006, RD0.pos[2] + .12);
+    cockpit.add(radarMesh, projector);
+
+    // CPT-04 赤色非常灯 + 室内灯(輝度を抑えて金属面のブルーム発火を防ぐ)
     const alertLight = new THREE.PointLight(0xff2040, 0, 4.5, 2);
-    alertLight.position.set(0, -.85, -1.05);
-    cockpit.add(alertLamp, alertLight);
-    cptFx = {greebles: gDark.length + gMetal.length, bezels: 0, lamps, alertLamp, alertLight};
+    alertLight.position.set(0, -.6, -.9);
+    const cl = new THREE.PointLight(0x00f0ff, 1.6, 5, 2);   // 計器台の上面が明るく光りすぎないよう控えめに
+    cl.position.set(0, -.4, -1);
+    cockpit.add(alertLight, cl);
+    cptFx = {greebles: gDark.length + gMetal.length, bezels: 3, lamps, alertLamp, alertLight};   // bezels = 筐体(メーター・レーダー投影器・操縦桿の台座)
+
+    ck = {dash: side, dashTop: top, strip, bow, glass, stickPivot, trigger, trigBase: trigger.rotation.x, triggerT: 0, tip,
+      meterMesh, meterP: mp, meterState: null, radarMesh, radarP: rp, mGlow, mats: {dash: mDash, frame: mFrame, metal: mMetal},
+      frame: 0, redraws: {meter: 0, radar: 0}, keys: {}, state: 0};
 
     // HUDレティクル(四隅のコーナーブラケット + 中央の十字 / ごく薄い飾り、ロック時に増光)
     retMat = new THREE.MeshBasicMaterial({color:0x00f0ff, transparent:true, opacity:.12, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide});
@@ -2568,174 +2631,121 @@ const AsteroidRun = (()=>{
     ret.add(rbar(rt, .09, 0, 0));
     ret.position.set(0, -.65, -3);
     hudRig.add(ret);   // SPEC-09b: カメラ座標系は同じ(hudRigはカメラの行列に毎フレーム一致)
-
-    // 計器ディスプレイ(3面独立パネル / 左右を内側に向けたラップアラウンド配置)
-    dcv = []; dctx = []; dtex = [];
-    const panelGeo = new THREE.PlaneGeometry(.74, .56);
-    const panelPose = [
-      {p:[-.76, -.73, -1.33], r:[-.18,  .42, 0]},   // 左: 内向き
-      {p:[  0,  -.78, -1.48], r:[-.24,   0,  0]},   // 中央: やや奥・下
-      {p:[ .76, -.73, -1.33], r:[-.18, -.42, 0]}    // 右: 内向き
-    ];
-    for(let i=0;i<3;i++){
-      const cv = document.createElement('canvas');
-      cv.width = 340; cv.height = 256;
-      dcv.push(cv);
-      dctx.push(cv.getContext('2d'));
-      const tx = new THREE.CanvasTexture(cv);
-      tx.colorSpace = THREE.SRGBColorSpace;
-      dtex.push(tx);
-      const p = new THREE.Mesh(panelGeo, new THREE.MeshBasicMaterial({map:tx, transparent:true}));
-      p.position.set(...panelPose[i].p);
-      p.rotation.set(...panelPose[i].r);
-      cockpit.add(p);
-    }
-
-    // CPT-02: 計器ベゼル(3面×4辺を1メッシュに結合)
-    const bz = [];
-    for(const {p, r} of panelPose){
-      const bar = (w, h, lx, ly)=>{
-        const g = new THREE.BoxGeometry(w, h, .025);
-        g.translate(lx, ly, 0);
-        return {g, p, r};
-      };
-      bz.push(bar(.80,.035,0,.30), bar(.80,.035,0,-.30), bar(.035,.64,-.385,0), bar(.035,.64,.385,0));
-    }
-    cockpit.add(new THREE.Mesh(Assets.mergeGeo(bz), metal));
-    cptFx.bezels = 3;
-
-    // コックピット内照明(輝度を抑えて金属面のブルーム発火を防ぐ)
-    const cl = new THREE.PointLight(0x00f0ff, 3, 5, 2);
-    cl.position.set(0, -.4, -1);
-    cockpit.add(cl);
   }
 
-  /* --- 計器の描画(3面独立) --- */
-  function panelBase(c, label){
-    c.clearRect(0, 0, 340, 256);
-    c.beginPath();
-    c.roundRect(6, 10, 328, 236, 18);
-    c.fillStyle = 'rgba(2,8,22,.97)'; c.fill();
-    c.strokeStyle = 'rgba(0,240,255,.5)'; c.lineWidth = 2; c.stroke();
-    c.fillStyle = '#8a96b8'; c.font = '18px Orbitron, monospace'; c.textAlign = 'left';
-    c.fillText(label, 24, 44);
+  /* --- 計器の描画(SPEC-13 K1: メーター / 投影レーダー) --- */
+  function glitchCanvas(c, W, H){   // 被弾直後のノイズ走査線(FX-06)。CRITICAL時は赤系
+    const gc = st && st.shields <= 0 ? '255,46,80' : '160,220,255';
+    const bands = 2 + (Math.random()*3|0);
+    for(let b = 0; b < bands; b++){
+      const y = Math.random()*H, h = 3 + Math.random()*10;
+      c.fillStyle = `rgba(${gc},${.12 + Math.random()*.2})`;
+      c.fillRect(0, y, W, h);
+      const sy = Math.random()*H, sh = 6 + Math.random()*14, off = (Math.random()-.5)*10;
+      c.drawImage(c.canvas, 0, sy*CANVAS_Q, c.canvas.width, sh*CANVAS_Q, off, sy, W, sh);   // 水平シフト帯
+    }
   }
-  function drawDash(){
-    // 左: 速度計(アークメーター。レッドゾーン入りで最高速が直感的に分かる)
-    let c = dctx[0];
-    panelBase(c, 'VELOCITY');
-    const gx = 186, gy = 150, gr = 78;   // レバーと重ならないようやや右寄せ
-    const ga = Math.PI*.75, gSweep = Math.PI*1.5;   // 135°→405°の270°スイープ
-    const gRatio = Math.min(1, st.speed/SPD_MAX);
-    const isMax = st.speed >= SPD_MAX;
-    c.lineCap = 'round';
-    // 背景トラック + レッドゾーン(上位12%)
-    c.lineWidth = 10;
-    c.strokeStyle = 'rgba(255,255,255,.08)';
-    c.beginPath(); c.arc(gx, gy, gr, ga, ga+gSweep); c.stroke();
-    c.strokeStyle = 'rgba(255,46,196,.35)';
-    c.beginPath(); c.arc(gx, gy, gr, ga+gSweep*.88, ga+gSweep); c.stroke();
-    // 進捗アーク
-    c.strokeStyle = isMax ? '#ff2ec4' : '#00f0ff';
-    c.shadowColor = isMax ? '#ff2ec4' : '#00f0ff'; c.shadowBlur = 10;
-    c.beginPath(); c.arc(gx, gy, gr, ga, ga+gSweep*Math.max(.001, gRatio)); c.stroke();
-    c.shadowBlur = 0;
-    // 目盛り
-    c.lineWidth = 2; c.strokeStyle = 'rgba(138,150,184,.6)';
-    for(let i=0;i<=8;i++){
-      const a = ga + gSweep*i/8;
-      c.beginPath();
-      c.moveTo(gx+Math.cos(a)*(gr-12), gy+Math.sin(a)*(gr-12));
-      c.lineTo(gx+Math.cos(a)*(gr-20), gy+Math.sin(a)*(gr-20));
-      c.stroke();
-    }
-    // 針 + ハブ
-    const na = ga + gSweep*gRatio;
-    c.lineWidth = 3; c.strokeStyle = '#fff';
-    c.shadowColor = isMax ? '#ff2ec4' : '#00f0ff'; c.shadowBlur = 8;
-    c.beginPath(); c.moveTo(gx, gy); c.lineTo(gx+Math.cos(na)*(gr-24), gy+Math.sin(na)*(gr-24)); c.stroke();
-    c.shadowBlur = 0;
-    c.fillStyle = '#0b1126'; c.strokeStyle = '#00f0ff'; c.lineWidth = 2;
-    c.beginPath(); c.arc(gx, gy, 7, 0, Math.PI*2); c.fill(); c.stroke();
-    // デジタル値(上限到達でMAX) — ゲージ内側に表示してレバーと干渉しない位置に
-    c.textAlign = 'center';
-    if(isMax){
-      c.fillStyle = '#ff2ec4'; c.font = '30px Orbitron, monospace';
-      c.shadowColor = '#ff2ec4'; c.shadowBlur = 12;
-      c.fillText('MAX', gx, gy+38);
-      c.shadowBlur = 0;
-    }else{
-      c.fillStyle = '#00f0ff'; c.font = '30px Orbitron, monospace';
-      c.fillText(String(Math.floor(st.speed*4)), gx, gy+38);
-    }
-    c.fillStyle = '#8a96b8'; c.font = '13px Orbitron, monospace';
-    c.fillText('km/s', gx, gy+58);
-    c.textAlign = 'left';
-    dtex[0].needsUpdate = true;
-
-    // 中央: 近接レーダー(実際の小惑星/コアの位置)
-    c = dctx[1];
-    panelBase(c, 'PROXIMITY RADAR');
-    const cx = 170, cy = 144, r = 84;
+  function drawMeter(force = false, glitch = false){
+    if(!ck || !st) return;
+    const speed = st.speed, max = speed >= SPD_MAX, k = Math.min(1, speed/SPD_MAX);
+    const text = max ? 'MAX' : String(Math.floor(speed*4)), thr = Math.round(k*100), si = stateIdx();
+    const key = `${text}|${si}`;
+    if(!force && !glitch && key === ck.keys.meter) return;
+    ck.keys.meter = key; ck.redraws.meter++;
+    ck.meterState = {text, frac: k, thr, max};
+    const {ctx: c, cw: w, ch: h} = ck.meterP, col = STATE_COL[si];
+    const cx = w/2, cy = h - 60, R = 218, a0 = Math.PI*1.08, sw = Math.PI*.84;
+    c.clearRect(0, 0, w, h);
+    c.fillStyle = '#02070c'; c.beginPath(); c.arc(cx, cy, R + 34, Math.PI, 0); c.lineTo(w, h); c.lineTo(0, h); c.fill();
+    c.lineCap = 'butt'; c.lineWidth = 16;
+    c.strokeStyle = 'rgba(255,255,255,.07)'; c.beginPath(); c.arc(cx, cy, R, a0, a0 + sw); c.stroke();
+    c.strokeStyle = 'rgba(255,59,92,.45)'; c.beginPath(); c.arc(cx, cy, R, a0 + sw*.86, a0 + sw); c.stroke();   // レッドゾーン(上位14%)
+    c.strokeStyle = max ? '#ff2ec4' : col; c.shadowColor = c.strokeStyle; c.shadowBlur = 14;
+    c.beginPath(); c.arc(cx, cy, R, a0, a0 + sw*Math.max(.01, k)); c.stroke(); c.shadowBlur = 0;
+    c.strokeStyle = 'rgba(200,230,255,.55)'; c.lineWidth = 3;
+    for(let i = 0; i <= 12; i++){ const a = a0 + sw*i/12, l = i%3 ? 14 : 26;
+      c.beginPath(); c.moveTo(cx + Math.cos(a)*(R - 20), cy + Math.sin(a)*(R - 20)); c.lineTo(cx + Math.cos(a)*(R - 20 - l), cy + Math.sin(a)*(R - 20 - l)); c.stroke(); }
+    const na = a0 + sw*k;   // 数字に掛からない短い指針
+    c.strokeStyle = '#fff'; c.lineWidth = 4; c.shadowColor = col; c.shadowBlur = 10;
+    c.beginPath(); c.moveTo(cx + Math.cos(na)*(R - 95), cy + Math.sin(na)*(R - 95)); c.lineTo(cx + Math.cos(na)*(R + 4), cy + Math.sin(na)*(R + 4)); c.stroke(); c.shadowBlur = 0;
+    glowText(c, text, cx, cy - 64, 58, max ? '#ff2ec4' : '#ffffff', 'center', 8);
+    glowText(c, 'km/s', cx, cy - 26, 30, col, 'center', 6);
+    glowText(c, `THR ${thr}%`, cx, cy + 6, 30, '#ffb347', 'center', 4);
+    if(glitch) glitchCanvas(c, w, h);
+    ck.meterP.tex.needsUpdate = true;
+  }
+  function drawRadar(glitch = false){
+    if(!ck || !ship) return;
+    ck.redraws.radar++;
+    const {ctx: c, cw: w, ch: h} = ck.radarP, col = STATE_COL[stateIdx()];
+    const cx = w/2, cy = h - 16, r = 220;
+    c.clearRect(0, 0, w, h);
     c.save();
-    c.beginPath(); c.arc(cx, cy, r, 0, Math.PI*2); c.clip();
-    c.strokeStyle = 'rgba(0,240,255,.3)'; c.lineWidth = 1;
-    [r, r*.66, r*.33].forEach(rr=>{ c.beginPath(); c.arc(cx, cy, rr, 0, Math.PI*2); c.stroke(); });
-    c.beginPath(); c.moveTo(cx-r, cy); c.lineTo(cx+r, cy); c.moveTo(cx, cy-r); c.lineTo(cx, cy+r); c.stroke();
-    const sw = performance.now()/600;
-    c.strokeStyle = 'rgba(0,240,255,.7)'; c.lineWidth = 2;
-    c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx+Math.cos(sw)*r, cy+Math.sin(sw)*r); c.stroke();
+    c.beginPath(); c.moveTo(cx, cy); c.arc(cx, cy, r, Math.PI*1.2, Math.PI*1.8); c.closePath(); c.clip();
+    c.fillStyle = 'rgba(0,40,60,.25)'; c.fillRect(0, 0, w, h);
+    c.strokeStyle = col; c.globalAlpha = .45; c.lineWidth = 2;
+    [r, r*.66, r*.33].forEach(rr=>{ c.beginPath(); c.arc(cx, cy, rr, Math.PI*1.2, Math.PI*1.8); c.stroke(); });
+    c.globalAlpha = .8;
+    const sw = Math.PI*1.2 + (performance.now()/900 % 1)*Math.PI*.6;
+    c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.cos(sw)*r, cy + Math.sin(sw)*r); c.stroke();
+    c.globalAlpha = 1;
     for(const m of asts){
+      if(!m.visible) continue;
       const dx = m.position.x - ship.position.x, dz = m.position.z - ship.position.z;
       c.fillStyle = dz > -170 ? '#ff2ec4' : 'rgba(190,220,255,.75)';
-      c.fillRect(cx+(dx/130)*r-2.5, cy+(dz/520)*r-2.5, 5, 5);
+      c.fillRect(cx + (dx/130)*r - 3, cy + (dz/520)*r - 3, 6, 6);
     }
     for(const m of cores){
+      if(!m.visible) continue;
       const dx = m.position.x - ship.position.x, dz = m.position.z - ship.position.z;
-      c.fillStyle = '#7dffec';
-      c.beginPath(); c.arc(cx+(dx/130)*r, cy+(dz/520)*r, 4, 0, Math.PI*2); c.fill();
+      c.fillStyle = '#7dffec'; c.beginPath(); c.arc(cx + (dx/130)*r, cy + (dz/520)*r, 5, 0, Math.PI*2); c.fill();
     }
     c.restore();
-    c.fillStyle = '#fff';
-    c.beginPath(); c.moveTo(cx, cy-7); c.lineTo(cx-5, cy+5); c.lineTo(cx+5, cy+5); c.closePath(); c.fill();
-    dtex[1].needsUpdate = true;
-
-    // 右: システム状態
-    c = dctx[2];
-    panelBase(c, 'SYSTEMS');
-    c.fillStyle = '#8a96b8'; c.font = '16px Orbitron, monospace';
-    c.fillText('SHIELD', 32, 92);
-    c.fillStyle = st.shields > 1 ? '#00f0ff' : '#ff2ec4';
-    c.font = '28px Orbitron, monospace';
-    c.fillText('◆ '.repeat(Math.max(0, st.shields)) + '◇ '.repeat(3-Math.max(0, st.shields)), 32, 128);
-    c.fillStyle = '#8a96b8'; c.font = '16px Orbitron, monospace';
-    c.fillText('ENERGY CORE', 32, 180);
-    const noCore = performance.now() < noCoreUntil;
-    c.fillStyle = noCore ? '#ff2ec4' : '#7dffec';
-    c.font = '28px Orbitron, monospace';
-    c.fillText(String(st.cores).padStart(2, '0') + (noCore ? ' NO CORE' : ''), 32, 216);
-    if(st.mult > 1){   // SPEC-09e F5-15: コンボ倍率
-      c.fillStyle = '#ff2ec4'; c.font = '24px Orbitron, monospace';   // 右端はスロットルレバーに隠れるためシールド表示の右隣に置く
-      c.fillText('×' + st.mult.toFixed(1), 168, 128);
+    c.fillStyle = '#fff'; c.beginPath(); c.moveTo(cx, cy - 12); c.lineTo(cx - 7, cy + 4); c.lineTo(cx + 7, cy + 4); c.closePath(); c.fill();
+    if(glitch) glitchCanvas(c, w, h);
+    ck.radarP.tex.needsUpdate = true;
+  }
+  // 操縦席の毎フレーム更新(操縦席視点のみ): 操縦桿の傾き・トリガー・計器の再描画
+  function updateCockpit(dt, now){
+    if(!ck) return;
+    ck.stickPivot.rotation.x = sm.y*CK.stick.kx;
+    ck.stickPivot.rotation.z = -sm.x*CK.stick.kz;
+    if(ck.triggerT > 0) ck.triggerT = Math.max(0, ck.triggerT - dt);
+    ck.trigger.rotation.x = ck.trigBase + (ck.triggerT > 0 ? .35 : 0);
+    const si = stateIdx();
+    if(si !== ck.state){ ck.state = si; ck.mGlow.color.set(STATE_COL[si]).multiplyScalar(CK.glowK); }
+    ck.frame++;
+    const glitch = now < glitchUntil;
+    if(ck.frame%2 === 0 || glitch) drawMeter(false, glitch);
+    if(ck.frame%4 === 0 || glitch) drawRadar(glitch);
+  }
+  // 操縦席の不透明部品のマスク(視界・占有率・操縦桿の見かけ位置の計測用 / SPEC-13 K1)
+  function cockpitMask(fov = 72, w = 1024, h = 576){
+    const inCp = new Set(); cockpit.traverse(o=>inCp.add(o));
+    const white = new THREE.MeshBasicMaterial({color:0xffffff}), keep = [];
+    S.traverse(o=>{
+      if(o === S || !o.visible) return;
+      if(o.isMesh && inCp.has(o) && o.material.blending !== THREE.AdditiveBlending){ keep.push([o, 'm', o.material]); o.material = white; }
+      else if(o.isMesh || o.isPoints || o.isLine || o.isSprite){ keep.push([o, 'v']); o.visible = false; }
+    });
+    const keepCam = [C.position.clone(), C.quaternion.clone(), C.fov], bg = S.background, fog = S.fog;
+    S.background = new THREE.Color(0); S.fog = null;
+    C.position.set(ship.position.x, ship.position.y + .55, ship.position.z + 1.35);
+    C.lookAt(ship.position.x, ship.position.y + .35, -160);
+    C.fov = fov; C.aspect = w/h; C.updateProjectionMatrix(); C.updateMatrixWorld(true);
+    R.setSize(w, h, false); R.setRenderTarget(null); R.render(S, C);
+    const buf = readAll(), bw = R.domElement.width, bh = R.domElement.height;
+    let n = 0, on = 0, cen = 0;
+    for(let y = 0; y < bh; y += 2) for(let x = 0; x < bw; x += 2){
+      n++;
+      if(buf[(y*bw + x)*4] > 128){ on++; const nx = x/bw*2 - 1, ny = y/bh*2 - 1; if(Math.abs(nx) <= .55 && ny >= -.35 && ny <= .75) cen++; }
     }
-    dtex[2].needsUpdate = true;
-
-    // 被弾直後は全計器にノイズ走査線グリッチ(FX-06)。CRITICAL時は赤系
-    if(performance.now() < glitchUntil){
-      const gc = st.shields <= 0 ? '255,46,80' : '160,220,255';
-      for(let p = 0; p < 3; p++){
-        const c2 = dctx[p], W = c2.canvas.width, H = c2.canvas.height;
-        const bands = 2 + (Math.random()*3|0);
-        for(let b = 0; b < bands; b++){
-          const y = Math.random()*H, h = 3 + Math.random()*10;
-          c2.fillStyle = `rgba(${gc},${.12 + Math.random()*.2})`;
-          c2.fillRect(0, y, W, h);
-          const sy = Math.random()*H, sh = 6 + Math.random()*14, off = (Math.random()-.5)*10;
-          c2.drawImage(c2.canvas, 0, sy, W, sh, off, sy, W, sh);   // 水平シフト帯
-        }
-        dtex[p].needsUpdate = true;
-      }
-    }
+    const tp = new THREE.Vector3(); ck.tip.getWorldPosition(tp); tp.project(C);
+    keep.forEach(([o, k, m])=>{ if(k === 'm') o.material = m; else o.visible = true; });
+    S.background = bg; S.fog = fog; white.dispose();
+    C.position.copy(keepCam[0]); C.quaternion.copy(keepCam[1]); C.fov = keepCam[2];
+    resize();
+    return {coverPct: +(on/n*100).toFixed(2), centerPx: cen, stickNdcX: +tp.x.toFixed(3)};
   }
 
   /* --- 機関砲 --- */
@@ -2958,6 +2968,7 @@ const AsteroidRun = (()=>{
     const now = performance.now();
     if(now - lastFire < 160) return;
     lastFire = now;
+    if(ck) ck.triggerT = CK.stick.trigger;   // SPEC-13: 操縦桿のトリガーを引く
     if(st.cores <= 0){
       noCoreUntil = now + 600;   // NO CORE警告
       hud();
@@ -3247,9 +3258,7 @@ const AsteroidRun = (()=>{
       C.lookAt(ship.position.x + sm.x*6, ship.position.y + .35 - sm.y*5, -160);
       C.rotateZ(sm.roll);
       C.rotateX(sm.pitch);
-      stick.rotation.x = sm.y*.45;
-      stick.rotation.z = -sm.x*.5;
-      lever.rotation.x = -.4 + spdR*.5;
+      updateCockpit(dt, now);   // SPEC-13: 操縦桿の傾き・トリガー・計器
 
       // レティクル: ロック対象に吸い付き、見かけサイズに合わせて拡縮。非ロック時は定位置の飾りへ
       let rx = sm.x*.42, ry = -.65 - sm.y*.3, rs = 1;
@@ -3363,7 +3372,6 @@ const AsteroidRun = (()=>{
       // SPEC-09e: 音の強さ = セクターの進行 + 残シールドの少なさ + コンボ段階
       SoundEngine.intensity(Math.min(1, (st.sector - 1)/5*.5 + (3 - Math.max(0, st.shields))/3*.3 + (st.mult - 1)/3*.2));
     }
-    if(view === 'cockpit' && frame%4 === 0) drawDash();
     stepShadows();   // SPEC-09d
     afterimage.uniforms['damp'].value = .68 + spdR*.2;   // 速度で残像(ブラー)強化
     composer.render();
@@ -3578,6 +3586,7 @@ const AsteroidRun = (()=>{
     });
   }
   function isReticle(o){ for(let p = o; p; p = p.parent) if(p === ret) return true; return false; }
+  function isIn(o, g){ for(let p = o; p; p = p.parent) if(p === g) return true; return false; }
   function input(x, y){
     mt.x = (x/innerWidth - .5)*2;
     mt.y = (y/innerHeight - .5)*2;
@@ -3665,6 +3674,14 @@ const AsteroidRun = (()=>{
       buzz: ms=>buzz(ms, true), fov: ()=>C.fov, hud,
       shipParts2: shipFx, bgFx, nearDust,   // SPEC-09f
       muzzles: muzzlePoints,                 // SPEC-10
+      ck: ck ? {   // SPEC-13
+        parts: {dash: ck.dash, bow: ck.bow, glass: ck.glass, stickPivot: ck.stickPivot, trigger: ck.trigger, meter: ck.meterMesh, radar: ck.radarMesh},
+        legacy: {lever: false, panels: 0},   // 旧スロットルレバー・計器3面は撤去済み
+        stick: ()=>({x: ck.stickPivot.rotation.x, z: ck.stickPivot.rotation.z, trig: ck.trigger.rotation.x}),
+        meter: ()=>ck.meterState, drawMeter: f=>drawMeter(f), mask: cockpitMask, materials: ck.mats, redraws: ck.redraws,
+        hwMeshes: ()=>{ let n = 0; cockpit.traverse(o=>{ if(o.isMesh && !(ck.holoG && isIn(o, ck.holoG))) n++; }); return n; },
+        tris: ()=>{ let n = 0; cockpit.traverse(o=>{ if(o.isMesh){ const g = o.geometry; n += (g.index ? g.index.count : g.attributes.position.count)/3; } }); return Math.round(n); },
+      } : null,
       collide: (now, measureOnly)=>{
         if(!measureOnly) return collide(now, 0);
         Assets.shipSpheresWorld(ship, shipSph);   // 性能計測用: 奥行きの除外なしで全岩を精査(最悪ケース)
