@@ -1,6 +1,6 @@
 # SPEC 13b — K2: ホログラム・状態色・警告・DOM HUD の一本化
 
-状態: **Draft** ／ 親: [SPEC-13](13-cockpit-holo.md) ／ 前提: K1（[13a](13a-k1-cockpit-hardware.md)）Verified ／ テスト: `tests/phaseK2.js`
+状態: **Verified（2026-09-26 phaseK2 11/11・run-all 23スイート355テスト ALL GREEN）** ／ 親: [SPEC-13](13-cockpit-holo.md) ／ 前提: K1（[13a](13a-k1-cockpit-hardware.md)）Verified ／ テスト: `tests/phaseK2.js`
 
 ## 1. 範囲
 
@@ -92,3 +92,11 @@ stateColor: ()=>'#rrggbb',
 
 - なし（DOM HUD はテキストが残る。輝度・予算・CON-05 は K1 と同じ条件で再確認）
 - draw call: +5 パネル（K1 と合わせ操縦席 ≤ 30）
+
+## 10. 実装時の判断
+
+- **上帯**のキーは「4 フレームごと＋状態」にした（スコアと距離は毎フレーム変わるため、値をキーに入れると毎フレーム描き直しになる）。60 フレームで 15 回
+- **視界の縁**は SP の横長画面（〜2.16:1）でも端まで届くよう 7.2×4.1 → 9.0×4.4
+- **走査線**はキャンバス上で `destination-out` の細い横線を抜く方式（加算合成では黒を重ねても暗くならないため）
+- **テスト用フック**: `ck.setReduced(v)`（reduced-motion の上書き）・`ck.texts()`（描いた文字列の記録）・`ck.meterRect()`
+- **検証時の消音**: `tests/run-all.js` は実行中だけ消音し、終了後に元の設定へ戻す（効果音の記録 `lastSfx/counts` は消音でも残るため判定は変わらない）
