@@ -1,6 +1,6 @@
 # SPEC 12 — 操縦席デザインの刷新: 方向性の検討（3案）
 
-状態: **Proposal（案の選定待ち）** ／ 依頼: 「質感は上がったが操縦席はあまり変化がない。近未来的なUXから検討してデザインし直す。まずはイメージを案として」
+状態: **Proposal（案A採用・案A改の確認待ち）** ／ 依頼: 「質感は上がったが操縦席はあまり変化がない。近未来的なUXから検討してデザインし直す。まずはイメージを案として」
 確認用ページ: [labs/cockpit-concepts.html](../labs/cockpit-concepts.html)（本番と同じ照明・岩・映り込み・ACES で3案を切替・状態を切替） ／ 画像: `labs/cockpit-shots/`
 
 ## 1. 現状の課題
@@ -43,7 +43,39 @@
 
 案が決まり次第、詳細設計（SDD）→ テスト先行で実装に進む。
 
-## 5. 未決事項（選定時に確認したい点）
+## 5. 選定結果と追加要望（2026-09-25）
 
-- 操縦席視点の DOM HUD（左上）を廃止し、世界内の表示に一本化してよいか
-- 次の段階で予定している**パイロットの手（グローブ）**を操縦席に入れるか（案Bと特に相性が良い）
+**案A を採用**。追加要望:「操縦桿とスピードのメーターはあった方が良い。中央下部に操縦桿」「最新のガンダムやSFのコックピット表現を参考に」。
+
+### 5.1 参考調査（要約）
+
+| 参考 | 特徴 | 案A改への反映 |
+|---|---|---|
+| ガンダム: 全天周囲モニター＋リニアシート（Zガンダム以降の定番） | 球形の操縦席の内壁全体がモニター。シートはアームで浮き、情報は周囲の映像の上にウィンドウとして重なる | キャノピーのガラスに継ぎ目の格子をうっすら入れ、全天周囲モニターの質感に。情報は枠付きの「ウィンドウ」として浮かべる |
+| ガンダム: 操縦桿の系譜 | 左右のレバー／スティックが基本。逆襲のシャア以降は肘掛け先の球状グリップ。ジークアクスでは天井から第2の操縦系が降りる可変式 | 画面下中央の操縦桿（要望）と、比較用に左右グリップ版を用意 |
+| 映画『オブリビオン』の Bubble Ship（GMUNK） | 球形ガラスに埋め込んだホログラムHUD。白＋赤警告の少ない色数。**警告は画面中央に昇格**。物理の操縦系とデジタル表示の併用。後ろ向きに回ると高度・速度が見えなくなる点は批判された | 警告は中央に表示。色は状態色＋白に限定。**速度は常に見える物理メーターに**（オブリビオンの反省） |
+| Star Citizen | 部品を組み替えられるモジュール式の操縦席。360°のホログラムUI。重要な情報ほど手前に。色数を絞る | 重要度で奥行きを分ける（計器＝手前、状況表示＝キャノピー面） |
+| Elite Dangerous | 操縦席内のホログラムパネル。左右を見るとサイドパネルが展開 | 将来の拡張候補（視線で開くパネル） |
+| 『トップガン マーヴェリック』Darkstar | ロッキード・マーティンと作った現実的な操縦席。合成視界ディスプレイ | 計器の筐体・ガラス・金属の質感を実機寄りに |
+
+出典: [全天周囲モニター・リニアシート（Wikipedia）](https://ja.wikipedia.org/wiki/全天周囲モニター・リニアシート) ／ [ガンダムWiki 全天周囲モニター](https://gundam.wiki.cre.jp/wiki/全天周囲モニター)・[リニアシート](https://gundam.wiki.cre.jp/wiki/リニアシート) ／ [MS操縦系の考察（note）](https://note.com/natty_laelia1215/n/nf20af8075977) ／ [マグミクス: ガンダムのコックピット](https://magmix.jp/post/241695) ／ [GQuuuuuuX（Gundam Wiki）](https://gundam.fandom.com/wiki/GMS-%CE%A9_GQuuuuuuX) ／ [Fuzzy Math: Evaluating the interface design of Oblivion](https://fuzzymath.com/blog/evaluating-interface-design-of-oblivion/) ／ [GMUNK: OBLIVION GFX](https://gmunk.com/OBLIVION-GFX) ／ [HUDS+GUIS: Oblivion](https://www.hudsandguis.com/home/2013/05/02/oblivion-interface-design) ／ [HUDS+GUIS: Star Citizen revisited](https://www.hudsandguis.com/home/star-citizen-revisited-part-1) ／ [ArtStation: UI in Star Citizen](https://magazine.artstation.com/2020/10/the-importance-of-ui-in-star-citizen/) ／ [Elite Dangerous コミュニティ議論](https://steamcommunity.com/app/359320/discussions/0/1743357605579937253/?ctp=2) ／ [Darkstar の設計](https://equicapmag.com/aviation/top-gun-maverick-darkstar-conceptualization/)
+（『水星の魔女』『SEED FREEDOM』の操縦席は詳細な公開資料が見つからなかったため対象外）
+
+### 5.2 案A改（labs の「案A改」2種）
+
+| 要素 | 内容 |
+|---|---|
+| 操縦桿（中央） | 画面下中央。回転体の輪郭に指のくびれ、前傾の親指台座、ハットスイッチ（状態色で発光）、赤い発射ボタン、トリガー。**マウス/ドラッグ入力に合わせて傾く**。見えるのはグリップ上部だけで、前方の視界を塞がない（画面の下 15% 程度） |
+| スピードメーター | 金属の筐体＋ガラス越しの弧型計器。デジタル数値（km/s、本番と同じ ×4 表示）・目盛り・短い指針・**レッドゾーン**・推力%。中央操縦桿版は操縦桿の左（車のメーター位置）、左右グリップ版は計器台の中央 |
+| 投影レーダー | 操縦桿の右、計器台の上に投影 |
+| キャノピー面のホログラム | 左＝シールド / 右＝武装（コア・コンボ倍率、枠付きウィンドウ） / 上＝セクターとスコア。速度テープは廃止（メーターに一本化） |
+| 危険時 | ホログラムとメーターが赤に変わる。中央に「SHIELD CRITICAL」、視界の縁が赤く明滅 |
+| レティクル | 本番と同一（CON-05） |
+
+画像: `labs/cockpit-shots/A2-center-normal.jpg`・`A2-center-critical.jpg`・`A2-twin-normal.jpg`
+
+## 6. 未決事項（詳細設計の前に確認したい点）
+
+- 操縦桿は**中央1本**か**左右グリップ**か（推奨: 要望どおり中央1本。マウス操作と1対1で対応し分かりやすい）
+- 操縦席視点の DOM HUD（左上）を廃止し、世界内の表示に一本化してよいか（推奨: 廃止。SP も同様）
+- **パイロットの手（グローブ）**を操縦桿に添えるか（別段階での追加を推奨）

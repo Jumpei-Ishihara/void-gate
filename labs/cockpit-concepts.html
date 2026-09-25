@@ -24,7 +24,8 @@
 <canvas id="c"></canvas>
 <div id="panel"><h1 id="pt"></h1><p id="pd"></p><ul id="pl"></ul></div>
 <div id="ui">
-  <button data-c="0" class="on">案A HOLO CANOPY</button><button data-c="1">案B TACTICAL DECK</button><button data-c="2">案C ZERO-UI POD</button>
+  <button data-c="3" class="on">案A改 中央操縦桿</button><button data-c="4">案A改 ツイングリップ</button>
+  <button data-c="0">案A</button><button data-c="1">案B</button><button data-c="2">案C</button>
   <span class="sep"></span>
   <button data-s="normal" class="on">通常</button><button data-s="low">シールド低下</button><button data-s="critical">CRITICAL</button><button data-s="combo">コンボ中</button>
   <button id="pause">一時停止</button>
@@ -953,6 +954,155 @@ function conceptC(){
   }};
 }
 
+// ================= 案A改: HOLO CANOPY + 物理の操縦桿とスピードメーター =================
+// 調査からの反映: ガンダムの全天周囲モニター(視界を覆うガラス面に情報ウィンドウが浮かぶ)/ オブリビオン(警告だけ赤く中央へ)/
+// Star Citizen(重要なものほど手前・色数を絞る)/ X-wing・実機(中央の操縦桿と手前の計器で「操縦している」実感)
+// grip: 'center'(画面下中央の操縦桿) | 'twin'(ガンダム式の左右グリップ)
+function conceptA2(grip = 'center'){
+  const g = new THREE.Group();
+  const dark = new THREE.MeshStandardMaterial({color: 0x121821, metalness: .72, roughness: .36, envMapIntensity: .9, side: THREE.DoubleSide});
+  const frameM = new THREE.MeshStandardMaterial({color: 0x1a202a, metalness: .85, roughness: .28, envMapIntensity: 1.1});
+  const rubber = new THREE.MeshStandardMaterial({color: 0x0d0f13, metalness: .2, roughness: .82});
+  const metal = new THREE.MeshStandardMaterial({color: 0x8d96a3, metalness: .9, roughness: .3, envMapIntensity: 1.2});
+  const glowM = new THREE.MeshBasicMaterial({color: hdr(0x39f3ff, 2.2)});
+  // 計器台(案Aより少し高く・中央に張り出し)
+  const arc = 2.1, ts = Math.PI - arc/2;
+  const side = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.25, .4, 72, 1, true, ts, arc), dark); side.position.y = -.78;
+  const topG = new THREE.RingGeometry(.74, 1.05, 72, 1, Math.PI/2 - arc/2, arc); topG.rotateX(-Math.PI/2);
+  const top = new THREE.Mesh(topG, dark); top.position.y = -.58;
+  const stripG = new THREE.TorusGeometry(.75, .004, 6, 120, arc); stripG.rotateZ(Math.PI/2 - arc/2); stripG.rotateX(-Math.PI/2);
+  const strip = new THREE.Mesh(stripG, glowM); strip.position.y = -.575;
+  // キャノピー枠 + ガラス(全天周囲モニターのように、縁ほど光り、うっすら継ぎ目の格子が見える)
+  const bowG = new THREE.TorusGeometry(2.05, .03, 10, 96, 2.9); bowG.rotateZ(Math.PI/2 - 1.45);
+  const bow = new THREE.Mesh(bowG, frameM); bow.position.set(0, -1.0, -1.95);
+  const glass = new THREE.Mesh(new THREE.SphereGeometry(2.3, 48, 32, Math.PI*1.5 - 1.5, 3.0, .25, 1.6), new THREE.ShaderMaterial({
+    side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: `varying vec3 n; varying vec3 v; varying vec2 u; void main(){ u = uv; n = normalize(normalMatrix*normal); vec4 mv = modelViewMatrix*vec4(position,1.); v = normalize(-mv.xyz); gl_Position = projectionMatrix*mv; }`,
+    fragmentShader: `varying vec3 n; varying vec3 v; varying vec2 u;
+      void main(){ float f = pow(1. - abs(dot(n, v)), 3.);
+        vec2 q = abs(fract(u*vec2(18., 9.)) - .5); float grid = smoothstep(.49, .5, max(q.x, q.y))*.05;   // 継ぎ目の格子(ごく薄く)
+        float a = f*.35 + grid; gl_FragColor = vec4(vec3(.5,.8,1.)*a, a); }`}));
+  glass.position.y = -.2;
+  g.add(side, top, strip, bow, glass);
+
+  // ---- スピードメーター(計器台中央の物理計器: 金属の筐体 + ガラス越しの表示) ----
+  const meterHouse = new THREE.Group();
+  if(grip === 'center'){ meterHouse.position.set(-.44, -.47, -1.0); meterHouse.rotation.set(-.3, .32, 0); }   // 操縦桿の左(車のメーター位置)
+  else { meterHouse.position.set(0, -.45, -.9); meterHouse.rotation.x = -.3; }   // 計器台の上面(y -.58・半径 .74〜1.05)の上に載せる
+  meterHouse.scale.setScalar(.95);
+  const archShape = new THREE.Shape(); archShape.moveTo(-.3, -.1); archShape.lineTo(.3, -.1); archShape.absarc(0, -.1, .3, 0, Math.PI, false);
+  const house = new THREE.Mesh(new THREE.ExtrudeGeometry(archShape, {depth: .05, bevelEnabled: true, bevelThickness: .012, bevelSize: .012, bevelSegments: 2}), frameM);
+  house.position.z = -.05;
+  const meter = uiPlane(.54, .3, 540, 300, (c, w, h)=>{
+    const col = stateCol(), cx = w/2, cy = h - 22, R = 230, k = Math.max(0, Math.min(1, (W.speed - 110)/370));   // 本番の SPD_MAX 480 に合わせる
+    const a0 = Math.PI*1.08, sw = Math.PI*.84;
+    c.fillStyle = '#02070c'; c.beginPath(); c.arc(cx, cy, R + 14, Math.PI, 0); c.fill();
+    c.lineCap = 'butt';
+    c.lineWidth = 16; c.strokeStyle = 'rgba(255,255,255,.07)'; c.beginPath(); c.arc(cx, cy, R - 12, a0, a0 + sw); c.stroke();
+    c.strokeStyle = 'rgba(255,59,92,.45)'; c.beginPath(); c.arc(cx, cy, R - 12, a0 + sw*.86, a0 + sw); c.stroke();   // レッドゾーン
+    c.strokeStyle = k > .86 ? COL.red : col; c.shadowColor = c.strokeStyle; c.shadowBlur = 14;
+    c.beginPath(); c.arc(cx, cy, R - 12, a0, a0 + sw*Math.max(.01, k)); c.stroke(); c.shadowBlur = 0;
+    c.strokeStyle = 'rgba(200,230,255,.55)'; c.lineWidth = 3;
+    for(let i = 0; i <= 12; i++){ const a = a0 + sw*i/12, l = i % 3 ? 14 : 26;
+      c.beginPath(); c.moveTo(cx + Math.cos(a)*(R - 32), cy + Math.sin(a)*(R - 32)); c.lineTo(cx + Math.cos(a)*(R - 32 - l), cy + Math.sin(a)*(R - 32 - l)); c.stroke(); }
+    const na = a0 + sw*k; c.strokeStyle = COL.white; c.lineWidth = 4; c.shadowColor = col; c.shadowBlur = 10;
+    c.beginPath(); c.moveTo(cx + Math.cos(na)*(R - 95), cy + Math.sin(na)*(R - 95)); c.lineTo(cx + Math.cos(na)*(R - 4), cy + Math.sin(na)*(R - 4)); c.stroke(); c.shadowBlur = 0;   // 数字に掛からない短い指針
+    glowText(c, String(Math.round(W.speed*4)), cx, cy - 64, 58, COL.white, 'center', 8);
+    glowText(c, 'km/s', cx, cy - 28, 18, col, 'center', 6);
+    glowText(c, `THR ${Math.round(k*100)}%`, cx, cy - 4, 14, COL.amber, 'center', 4);
+  }, {holo: false, gain: 1.1});
+  meter.position.set(0, .01, .012);
+  const meterGlass = new THREE.Mesh(new THREE.PlaneGeometry(.56, .32), new THREE.MeshStandardMaterial({color: 0x0a1418, metalness: .9, roughness: .05, transparent: true, opacity: .12, envMapIntensity: 2}));
+  meterGlass.position.set(0, .01, .03);
+  meterHouse.add(house, meter, meterGlass);
+  g.add(meterHouse);
+
+  // ---- 操縦桿 ----
+  const sticks = [];
+  const gripM = new THREE.MeshStandardMaterial({color: 0x2c333e, metalness: .35, roughness: .5, envMapIntensity: .9});
+  const makeStick = (s = 1)=>{
+    const st = new THREE.Group();
+    const boot = new THREE.Mesh(new THREE.CylinderGeometry(.04, .09, .1, 20, 3), rubber); boot.position.y = .05;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.013, .017, .1, 16), metal); shaft.position.y = .14;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(.028, .003, 6, 32), glowM); ring.rotation.x = Math.PI/2; ring.position.y = .182;
+    // 人間工学グリップ: 回転体の輪郭に指のくびれ、上部は親指の台座(前傾)
+    const prof = [[0, .18], [.026, .18], [.03, .2], [.034, .215], [.031, .228], [.036, .245], [.033, .26], [.037, .278], [.036, .3], [.033, .32], [.036, .34], [.03, .352], [.016, .36], [0, .362]]
+      .map(([r, y])=>new THREE.Vector2(r, y));
+    const gripG = new THREE.LatheGeometry(prof, 28); gripG.scale(1, 1, 1.25);
+    const grp = new THREE.Group(); grp.rotation.x = -.18;
+    const body = new THREE.Mesh(gripG, gripM);
+    const head = new THREE.Mesh(new THREE.CapsuleGeometry(.024, .05, 6, 16), gripM); head.rotation.x = Math.PI/2; head.position.set(0, .352, -.012); head.scale.set(1.15, 1, .75);
+    const hat = new THREE.Mesh(new THREE.CylinderGeometry(.009, .011, .014, 12), metal); hat.position.set(0, .374, .006);
+    const hatTip = new THREE.Mesh(new THREE.SphereGeometry(.006, 10, 8), glowM); hatTip.position.set(0, .382, .006);
+    const fire = new THREE.Mesh(new THREE.CylinderGeometry(.008, .008, .01, 12), new THREE.MeshBasicMaterial({color: hdr(0xff3b5c, 1.8)}));
+    fire.rotation.z = Math.PI/2; fire.position.set(-.03, .35, -.025);
+    const trig = new THREE.Mesh(new THREE.CapsuleGeometry(.007, .03, 4, 8), metal); trig.position.set(0, .31, -.044); trig.rotation.x = .3;
+    const seam = new THREE.Mesh(new THREE.TorusGeometry(.0335, .0016, 6, 32), glowM); seam.rotation.x = Math.PI/2; seam.position.y = .3; seam.scale.set(1, 1.25, 1);
+    grp.add(body, head, hat, hatTip, fire, trig, seam);
+    st.add(boot, shaft, ring, grp); st.scale.setScalar(s);
+    const pivot = new THREE.Group(); pivot.add(st); sticks.push(pivot);
+    return pivot;
+  };
+  if(grip === 'center'){
+    const p = makeStick(1.3); p.position.set(0, -.76, -.55); g.add(p);   // 画面下中央: グリップ上部と親指台座だけが見える高さ
+  }else{
+    for(const sx of [-1, 1]){ const p = makeStick(1.2); p.position.set(sx*.56, -.74, -.6); p.rotation.z = -sx*.12; g.add(p); }   // ガンダム式: 左右の肘掛けの先
+  }
+
+  // ---- ホログラム(速度はメーターに一本化) ----
+  const Z = -2.3;
+  const shieldHolo = uiPlane(.62, .62, 300, 300, (c, w, h)=>{   // 左: シールド(案Aの右から移動)
+    const col = stateCol(), cx = w/2, cy = h/2, r = 110;
+    for(let i = 0; i < 3; i++){ const a0 = Math.PI*.85 + i*Math.PI*.24, on = i < W.shields;
+      c.lineWidth = 16; c.strokeStyle = on ? col : 'rgba(255,255,255,.08)'; c.shadowColor = col; c.shadowBlur = on ? 14 : 0;
+      c.beginPath(); c.arc(cx, cy, r, a0, a0 + Math.PI*.2); c.stroke(); }
+    c.shadowBlur = 0;
+    glowText(c, W.state === 'critical' ? 'CRITICAL' : 'SHIELD', cx - 40, cy - 4, 18, col, 'center');
+  });
+  shieldHolo.position.set(-.8, -.1, Z); shieldHolo.rotation.y = .22;
+  const armHolo = uiPlane(.62, .62, 300, 300, (c, w, h)=>{   // 右: 武装(コア残数)とコンボ
+    const col = stateCol(), cx = w/2, cy = h/2;
+    c.strokeStyle = col; c.globalAlpha = .5; c.lineWidth = 2; c.strokeRect(70, 90, 160, 120);   // 情報ウィンドウの枠(全天周囲モニター風)
+    c.globalAlpha = 1; c.fillStyle = col; c.fillRect(70, 80, 60, 10);
+    glowText(c, 'ARM', 136, 90, 12, col, 'left', 4);
+    glowText(c, `◆ ${W.cores}`, cx, cy + 6, 34, COL.white);
+    glowText(c, 'CORE', cx, cy + 34, 14, col);
+    if(W.mult > 1) glowText(c, `×${W.mult.toFixed(1)}`, cx, cy + 90, 28, '#ff5fd0');
+  });
+  armHolo.position.set(.8, -.1, Z); armHolo.rotation.y = -.22;
+  const topStrip = uiPlane(1.5, .15, 750, 75, (c, w, h)=>{
+    const col = stateCol();
+    c.strokeStyle = col; c.globalAlpha = .5; c.lineWidth = 2;
+    for(let i = 0; i < 30; i++){ const x = ((i*40 + W.t*60) % 1200) - 225; if(x < 40 || x > w - 40) continue; c.beginPath(); c.moveTo(x, h - 8); c.lineTo(x, h - (i % 3 ? 16 : 26)); c.stroke(); }
+    c.globalAlpha = 1;
+    glowText(c, `S${String(W.sector.n).padStart(2, '0')} · ${W.sector.name}`, w/2, 32, 22, col);
+    glowText(c, W.score.toLocaleString(), w - 30, 32, 22, COL.white, 'right', 6);
+  });
+  topStrip.position.set(0, .66, Z);
+  const radar = uiPlane(.36, .36, 256, 256, (c, w, h)=>drawRadar(c, w, h, stateCol(), true));   // 計器台右に投影
+  radar.position.set(.46, -.5, -.92); radar.rotation.set(-1.0, 0, -.25);
+  const alert = uiPlane(1.6, .2, 800, 100, (c, w, h)=>{   // 警告は中央に昇格(オブリビオン)
+    if(W.state !== 'critical') return;
+    const a = .55 + .45*Math.sin(W.t*9); c.globalAlpha = a;
+    glowText(c, '⚠  SHIELD CRITICAL', w/2, 64, 40, COL.red, 'center', 16); c.globalAlpha = 1;
+  });
+  alert.position.set(0, .3, Z);
+  const edge = uiPlane(7.2, 4.1, 720, 410, (c, w, h)=>{
+    if(W.state !== 'critical') return;
+    const a = .16 + .12*Math.sin(W.t*9), gr = c.createRadialGradient(w/2, h/2, h*.5, w/2, h/2, w*.6);
+    gr.addColorStop(0, 'rgba(255,59,92,0)'); gr.addColorStop(1, `rgba(255,59,92,${a})`); c.fillStyle = gr; c.fillRect(0, 0, w, h);
+  });
+  edge.position.set(0, 0, -2.6);
+  const ui = [meter, shieldHolo, armHolo, topStrip, radar, alert, edge];
+  g.add(shieldHolo, armHolo, topStrip, radar, alert, edge);
+  return {name: grip === 'center' ? 'A改 — CENTER STICK' : 'A改 — TWIN GRIP', group: g, ui, update(){
+    strip.material = glowM; glowM.color.set(stateCol()).multiplyScalar(2.2);
+    // 入力に合わせて操縦桿が傾く(デモ: 左右・前後にゆっくり)
+    const ix = Math.sin(W.t*.9)*.28, iy = Math.sin(W.t*.63)*.2;
+    for(const p of sticks){ p.rotation.z = -ix; p.rotation.x = iy; }
+  }};
+}
+
 
 // ===== 共通の宇宙(本番と同じ照明・岩・合成) =====
 const R = new THREE.WebGLRenderer({canvas: document.getElementById('c'), antialias: true});
@@ -991,9 +1141,16 @@ const INFO = [
   {t: '案C — ZERO-UI POD', d: '計器パネルを持たない継ぎ目のない陶器質のポッド。数値はレティクルを囲むリング1つだけ。', l: [
     '速度=左の弧 / シールド=右の3分割 / コンボ=下の桃色の弧。読むより「感じる」表示',
     '窓枠の光の継ぎ目が状態色で脈動。近づく岩の方向を窓の縁の矢印で知らせる(周辺視野)',
-    '最も未来的で視界が広い。情報の読み取りには慣れが必要']}];
+    '最も未来的で視界が広い。情報の読み取りには慣れが必要']},
+  {t: '案A改 — CENTER STICK', d: '案Aに、画面下中央の操縦桿と計器台中央のスピードメーターを加えた版。', l: [
+    'スピードメーター: 金属の筐体+ガラス越しの弧型計器(レッドゾーン・推力%)。速度の表示はここに一本化',
+    '操縦桿: 画面下中央。指のくびれ・親指台座・ハットスイッチ・発射ボタン・トリガー。入力に合わせて傾く。左=スピードメーター / 右=投影レーダー',
+    'ホログラム: 左=シールド / 右=武装(コア・コンボ) / 上=セクターとスコア。危険時は中央に警告']},
+  {t: '案A改 — TWIN GRIP', d: 'ガンダム式の左右グリップ版(比較用)。中央が空き、スピードメーターと視界がより広く見える。', l: [
+    '肘掛けの先の左右グリップ(全天周囲モニター+リニアシート系の文法)',
+    'スピードメーターは計器台の中央。それ以外は中央操縦桿版と同じ']}];
 let current = null, ci = 0;
-const builders = [conceptA, conceptB, conceptC];
+const builders = [conceptA, conceptB, conceptC, ()=>conceptA2('center'), ()=>conceptA2('twin')];
 function show(i){
   if(current) cam.remove(current.group);
   ci = i; current = builders[i](); cam.add(current.group);
@@ -1032,7 +1189,7 @@ window.COCKPIT = {show, setState, step, render: ()=>comp.render(), W};
 let last = performance.now();
 function loop(now){ requestAnimationFrame(loop); const dt = Math.min(.05, (now - last)/1000); last = now; if(!paused) step(dt); comp.render(); }
 await document.fonts.load('20px Orbitron').catch(()=>{});
-show(0); setState('normal'); resize(); requestAnimationFrame(loop);
+show(3); setState('normal'); resize(); requestAnimationFrame(loop);
 </script>
 </body>
 </html>

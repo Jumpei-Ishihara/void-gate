@@ -41,7 +41,8 @@ html = r'''<!DOCTYPE html>
 <canvas id="c"></canvas>
 <div id="panel"><h1 id="pt"></h1><p id="pd"></p><ul id="pl"></ul></div>
 <div id="ui">
-  <button data-c="0" class="on">案A HOLO CANOPY</button><button data-c="1">案B TACTICAL DECK</button><button data-c="2">案C ZERO-UI POD</button>
+  <button data-c="3" class="on">案A改 中央操縦桿</button><button data-c="4">案A改 ツイングリップ</button>
+  <button data-c="0">案A</button><button data-c="1">案B</button><button data-c="2">案C</button>
   <span class="sep"></span>
   <button data-s="normal" class="on">通常</button><button data-s="low">シールド低下</button><button data-s="critical">CRITICAL</button><button data-s="combo">コンボ中</button>
   <button id="pause">一時停止</button>
@@ -101,9 +102,16 @@ const INFO = [
   {t: '案C — ZERO-UI POD', d: '計器パネルを持たない継ぎ目のない陶器質のポッド。数値はレティクルを囲むリング1つだけ。', l: [
     '速度=左の弧 / シールド=右の3分割 / コンボ=下の桃色の弧。読むより「感じる」表示',
     '窓枠の光の継ぎ目が状態色で脈動。近づく岩の方向を窓の縁の矢印で知らせる(周辺視野)',
-    '最も未来的で視界が広い。情報の読み取りには慣れが必要']}];
+    '最も未来的で視界が広い。情報の読み取りには慣れが必要']},
+  {t: '案A改 — CENTER STICK', d: '案Aに、画面下中央の操縦桿と計器台中央のスピードメーターを加えた版。', l: [
+    'スピードメーター: 金属の筐体+ガラス越しの弧型計器(レッドゾーン・推力%)。速度の表示はここに一本化',
+    '操縦桿: 画面下中央。指のくびれ・親指台座・ハットスイッチ・発射ボタン・トリガー。入力に合わせて傾く。左=スピードメーター / 右=投影レーダー',
+    'ホログラム: 左=シールド / 右=武装(コア・コンボ) / 上=セクターとスコア。危険時は中央に警告']},
+  {t: '案A改 — TWIN GRIP', d: 'ガンダム式の左右グリップ版(比較用)。中央が空き、スピードメーターと視界がより広く見える。', l: [
+    '肘掛けの先の左右グリップ(全天周囲モニター+リニアシート系の文法)',
+    'スピードメーターは計器台の中央。それ以外は中央操縦桿版と同じ']}];
 let current = null, ci = 0;
-const builders = [conceptA, conceptB, conceptC];
+const builders = [conceptA, conceptB, conceptC, ()=>conceptA2('center'), ()=>conceptA2('twin')];
 function show(i){
   if(current) cam.remove(current.group);
   ci = i; current = builders[i](); cam.add(current.group);
@@ -142,7 +150,7 @@ window.COCKPIT = {show, setState, step, render: ()=>comp.render(), W};
 let last = performance.now();
 function loop(now){ requestAnimationFrame(loop); const dt = Math.min(.05, (now - last)/1000); last = now; if(!paused) step(dt); comp.render(); }
 await document.fonts.load('20px Orbitron').catch(()=>{});
-show(0); setState('normal'); resize(); requestAnimationFrame(loop);
+show(3); setState('normal'); resize(); requestAnimationFrame(loop);
 </script>
 </body>
 </html>
