@@ -2464,8 +2464,8 @@ const AsteroidRun = (()=>{
     bow:   {r: 3.0, tube: .03, y: -1.0, z: -1.95, arc: 2.9},   // 頭上を越える大きな弧。FOV84°でも中央域(K-R02)に掛からず、左右の側枠として見える
     glass: {r: 2.3, y: -.2, phi: [Math.PI*1.5 - 1.5, 3.0], theta: [.25, 1.6], grid: [18, 9]},
     stick: {pos: [0, -.76, -.55], scale: 1.3, kx: .45, kz: .5, trigger: .08},
-    meter: {pos: [-.44, -.51, -.9], rot: [-.35, .32, 0],   // 筐体の下端を計器台に埋め込み、上端は FOV84° でも中央域(K-R02)の外
-            scale: IS_TOUCH ? 1.0 : .8, canvas: [540, 300], plane: [.54, .3]},
+    meter: {pos: [IS_TOUCH ? -.39 : -.44, -.51, -.9], rot: [-.35, .32, 0],   // 筐体の下端を計器台に埋め込み、上端は FOV84° でも中央域(K-R02)の外
+            scale: IS_TOUCH ? .9 : .8, canvas: [540, 300], plane: [.54, .3]},   // SP は文字の実寸のため大きく、FIREボタン(左下)を避けて右へ寄せる(K-R11/R12)
     radar: {pos: [.46, -.47, -.92], rot: [-1.0, 0, -.25], size: .36, canvas: 256},   // 下端を計器台の上面より上に
     glowK: 1.6,   // 発光線のHDR倍率(ブルームは掛かるが白飛びしない上限)
   };
@@ -2639,18 +2639,21 @@ const AsteroidRun = (()=>{
 
   /* --- ホログラム(SPEC-13 K2: キャノピー面のシールド・武装・上帯・警告) --- */
   const HOLO_SCALE = IS_TOUCH ? 1.25 : 1;   // SPは文字の実寸を保つため拡大(K-R11)
+  const SIDE_X = IS_TOUCH ? .92 : .8;         // 左右のパネル(SPは拡大した分だけ外へ)
   function holoPanel({w, h, cw, ch, draw, key, fonts = {}, pos, rot = [0, 0, 0], ph = 0, flicker = true}){
     const p = canvasPanel(cw, ch);
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
       new THREE.MeshBasicMaterial({map: p.tex, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending}));
     mesh.position.set(...pos); mesh.rotation.set(...rot);
-    const hp = {mesh, ...p, w, h, fonts, ph, flicker, lastKey: null, redraws: 0, texts: [],
+    const hp = {mesh, ...p, w, h, fonts, ph, flicker, lastKey: null, redraws: 0, texts: [], reveal: 1,
       redraw(force = false, glitch = false){
-        const k = key ? key() : '';
+        const k = (key ? key() : '') + (hp.reveal < 1 ? '|r' + hp.reveal.toFixed(3) : '');
         if(!force && !glitch && k === hp.lastKey) return false;
         hp.lastKey = k; hp.redraws++;
         const c = p.ctx; c.clearRect(0, 0, cw, ch);
+        if(hp.reveal < 1){ c.save(); c.beginPath(); c.rect(0, 0, cw, ch*hp.reveal); c.clip(); }   // 起動演出: 上から描き出す
         textSink = hp.texts = []; draw(c, cw, ch); textSink = null;
+        if(hp.reveal < 1){ c.restore(); c.fillStyle = 'rgba(200,250,255,.9)'; c.fillRect(0, ch*hp.reveal - 2, cw, 3); }
         c.globalCompositeOperation = 'destination-out'; c.fillStyle = 'rgba(0,0,0,.28)';   // 走査線
         for(let y = 0; y < ch; y += 3) c.fillRect(0, y, cw, 1);
         c.globalCompositeOperation = 'source-over';
@@ -2663,7 +2666,7 @@ const AsteroidRun = (()=>{
   function buildHolos(){
     const g = new THREE.Group(); g.scale.setScalar(1);
     const col = ()=>STATE_COL[stateIdx()], Z = -2.3;
-    const shield = holoPanel({w: .62, h: .62, cw: 300, ch: 300, pos: [-.8, -.1, Z], rot: [0, .22, 0], ph: 0, fonts: {labels: 26},
+    const shield = holoPanel({w: .62, h: .62, cw: 300, ch: 300, pos: [-SIDE_X, -.1, Z], rot: [0, .22, 0], ph: 0, fonts: {labels: 26},
       key: ()=>`${st.shields}|${stateIdx()}`,
       draw(c, w, h){
         const cc = col(), cx = w/2, cy = h/2, r = 110;
@@ -2674,7 +2677,7 @@ const AsteroidRun = (()=>{
         c.shadowBlur = 0;
         glowText(c, st.shields <= 0 ? 'CRITICAL' : 'SHIELD', cx - 34, cy + 8, 26, cc);
       }});
-    const arm = holoPanel({w: .62, h: .62, cw: 300, ch: 300, pos: [.8, -.1, Z], rot: [0, -.22, 0], ph: 1.7, fonts: {numbers: 34, labels: 26},
+    const arm = holoPanel({w: .62, h: .62, cw: 300, ch: 300, pos: [SIDE_X, -.1, Z], rot: [0, -.22, 0], ph: 1.7, fonts: {numbers: 34, labels: 26},
       key: ()=>`${st.cores}|${performance.now() < noCoreUntil}|${st.mult}|${lockMode}|${stateIdx()}`,
       draw(c, w, h){
         const cc = col(), cx = w/2;
@@ -2687,7 +2690,7 @@ const AsteroidRun = (()=>{
         if(st.mult > 1) glowText(c, `×${st.mult.toFixed(1)}`, cx, 204, 30, '#ff2ec4');
         glowText(c, lockMode ? 'AUTO LOCK' : 'MANUAL', cx, 240, 26, cc, 'center', 6);
       }});
-    const top = holoPanel({w: 1.5, h: .18, cw: 900, ch: 108, pos: [0, .66, Z], ph: 3.1, fonts: {numbers: 36, labels: 30},
+    const top = holoPanel({w: 1.5, h: .18, cw: 900, ch: 108, pos: [0, .66, Z], ph: 3.1, fonts: {numbers: 42, labels: 32},
       key: ()=>`${Math.floor(ck.frame/4)}|${stateIdx()}`,   // スコアと距離は常に変わるため4フレームごとに描き直す
       draw(c, w, h){
         const cc = col(), sec = director ? director.sector : Spawner.sectorAt(0);
@@ -2695,9 +2698,9 @@ const AsteroidRun = (()=>{
         for(let i = 0; i < 40; i++){ const x = ((i*36 + ck.frame*2) % 1440) - 270; if(x < 250 || x > w - 250) continue;
           c.beginPath(); c.moveTo(x, h - 8); c.lineTo(x, h - (i%3 ? 18 : 30)); c.stroke(); }
         c.globalAlpha = 1;
-        glowText(c, `S${String(sec.n).padStart(2, '0')} · ${sec.name}`, w/2, 50, 30, cc);
-        glowText(c, score().toLocaleString(), w - 20, 50, 36, '#ffffff', 'right', 6);
-        glowText(c, `${Math.floor(st.dist)} Mkm`, 20, 50, 30, cc, 'left', 6);
+        glowText(c, `S${String(sec.n).padStart(2, '0')} · ${sec.name}`, w/2, 54, 32, cc);
+        glowText(c, score().toLocaleString(), w - 20, 56, 42, '#ffffff', 'right', 6);
+        glowText(c, `${Math.floor(st.dist)} Mkm`, 20, 54, 32, cc, 'left', 6);
       }});
     const alert = holoPanel({w: 1.6, h: .2, cw: 800, ch: 100, pos: [0, .3, Z], flicker: false, fonts: {labels: 40},
       draw(c, w, h){ glowText(c, '⚠  SHIELD CRITICAL', w/2, 64, 40, '#ff3b5c', 'center', 16); }});
@@ -2707,21 +2710,50 @@ const AsteroidRun = (()=>{
         gr.addColorStop(0, 'rgba(255,59,92,0)'); gr.addColorStop(1, 'rgba(255,59,92,1)');
         c.fillStyle = gr; c.fillRect(0, 0, w, h);
       }});
-    alert.mesh.visible = edge.mesh.visible = false;
-    for(const hp of [shield, arm, top, alert]){ hp.mesh.scale.setScalar(HOLO_SCALE); }
-    g.add(shield.mesh, arm.mesh, top.mesh, alert.mesh, edge.mesh);
+    // K-10 ロック札: レティクル枠の上側の外に「LOCK T-n.n」(レティクル自体は変えない)
+    const lockTag = holoPanel({w: .37, h: .09, cw: 264, ch: 64, pos: [0, 0, Z], flicker: false, fonts: {labels: 38},
+      key: ()=>`${ck.lockTTC.toFixed(1)}|${stateIdx()}`,
+      draw(c, w, h){ glowText(c, 'LOCK', 4, 46, 38, col(), 'left', 8); glowText(c, `T-${ck.lockTTC.toFixed(1)}`, w - 4, 46, 38, '#ffffff', 'right', 6); }});
+    // K-12 起動演出の締め
+    const online = holoPanel({w: 1.6, h: .2, cw: 800, ch: 100, pos: [0, .3, Z], flicker: false, fonts: {labels: 40},
+      draw(c, w, h){ glowText(c, 'SYSTEMS ONLINE', w/2, 64, 40, col(), 'center', 14); }});
+    alert.mesh.visible = edge.mesh.visible = lockTag.mesh.visible = online.mesh.visible = false;
+    for(const hp of [shield, arm, top, alert, lockTag, online]){ hp.mesh.scale.setScalar(HOLO_SCALE); }
+    g.add(shield.mesh, arm.mesh, top.mesh, alert.mesh, edge.mesh, lockTag.mesh, online.mesh);
     alert.redraw(true); edge.redraw(true);
+    ck.lockTTC = 0; ck.lockTag = lockTag; ck.online = online;
     cockpit.add(g);
     ck.holoG = g;
     ck.holos = {shield, arm, top, alert, edge};
     ck.holoList = [shield, arm, top];
     ck.reduced = null;   // テスト用に reduced-motion を上書き(null=端末の設定)
   }
-  function updateHolos(now, glitch){
+  // K-12 起動演出: 各部品の表示の進み(0〜1)
+  const BOOT_AT = {strip: 0, meter: .15, shield: .30, arm: .45, top: .60, radar: .75};
+  const bootP = k=>Math.min(1, Math.max(0, ((st ? st.bootT : 9) - BOOT_AT[k])/.2));
+  function updateHolos(now, glitch, lockTgt){
     const H = ck.holos, red = ck.reduced === null ? REDUCED : ck.reduced;
     for(const hp of ck.holoList){
-      hp.redraw(false, glitch);
-      hp.mesh.material.opacity = red ? 1 : .92 + .08*Math.sin(now/53 + hp.ph);   // ちらつき
+      const bp = bootP(hp === H.shield ? 'shield' : hp === H.arm ? 'arm' : 'top');
+      hp.reveal = bp;
+      hp.mesh.visible = bp > 0;
+      if(bp > 0) hp.redraw(false, glitch);
+      hp.mesh.material.opacity = bp*(red ? 1 : .92 + .08*Math.sin(now/53 + hp.ph));   // ちらつき
+    }
+    ck.strip.scale.x = Math.max(.001, bootP('strip'));   // 発光線は中央から左右へ
+    ck.meterMesh.material.opacity = bootP('meter');
+    ck.radarMesh.material.opacity = bootP('radar');
+    const bt = st.bootT;
+    ck.online.mesh.visible = bt >= .9 && bt < 1.5;
+    if(ck.online.mesh.visible){ ck.online.redraw(); ck.online.mesh.material.opacity = Math.min(1, (1.5 - bt)/.2); }
+    // K-10 ロック札(レティクルの現在位置・拡縮を読むだけ)
+    const tag = ck.lockTag;
+    tag.mesh.visible = !!(lockMode && lockTgt && bt >= BOOT_AT.arm);
+    if(tag.mesh.visible){
+      ck.lockTTC = Math.max(0, (ship.position.z - lockTgt.position.z)/Math.max(1, st.speed));
+      const k = 2.3/3, rs = ret.scale.x, halfH = .09/2*HOLO_SCALE/k;   // z=-2.3 の札を z=-3 面の寸法に換算
+      tag.mesh.position.set(ret.position.x*k, (ret.position.y + rs*.17 + halfH + .03)*k, -2.3);
+      tag.redraw();
     }
     const crit = stateIdx() === 2;
     H.alert.mesh.visible = H.edge.mesh.visible = crit;
@@ -2744,14 +2776,22 @@ const AsteroidRun = (()=>{
       c.drawImage(c.canvas, 0, sy*CANVAS_Q, c.canvas.width, sh*CANVAS_Q, off, sy, W, sh);   // 水平シフト帯
     }
   }
+  // K-12 起動演出: 指針が 0 → 最大 → 現在値へ振れる(.15〜.9秒)
+  function meterSpeed(){
+    const bt = st.bootT;
+    if(bt >= .9 || bt < .15) return bt < .15 ? 0 : st.speed;
+    if(bt < .5){ const u = (bt - .15)/.35; return SPD_MAX*(1 - (1 - u)*(1 - u)); }
+    const u = (bt - .5)/.4, e = u*u*(3 - 2*u);
+    return SPD_MAX + (st.speed - SPD_MAX)*e;
+  }
   function drawMeter(force = false, glitch = false){
     if(!ck || !st) return;
-    const speed = st.speed, max = speed >= SPD_MAX, k = Math.min(1, speed/SPD_MAX);
+    const speed = meterSpeed(), max = speed >= SPD_MAX, k = Math.min(1, speed/SPD_MAX);
     const text = max ? 'MAX' : String(Math.floor(speed*4)), thr = Math.round(k*100), si = stateIdx();
     const key = `${text}|${si}`;
     if(!force && !glitch && key === ck.keys.meter) return;
     ck.keys.meter = key; ck.redraws.meter++;
-    ck.meterState = {text, frac: k, thr, max};
+    ck.meterState = {text, frac: k, thr, max, shown: speed};
     const {ctx: c, cw: w, ch: h} = ck.meterP, col = STATE_COL[si];
     const cx = w/2, cy = h - 60, R = 218, a0 = Math.PI*1.08, sw = Math.PI*.84;
     c.clearRect(0, 0, w, h);
@@ -2805,7 +2845,7 @@ const AsteroidRun = (()=>{
     ck.radarP.tex.needsUpdate = true;
   }
   // 操縦席の毎フレーム更新(操縦席視点のみ): 操縦桿の傾き・トリガー・計器の再描画
-  function updateCockpit(dt, now){
+  function updateCockpit(dt, now, lockTgt = null){
     if(!ck) return;
     ck.stickPivot.rotation.x = sm.y*CK.stick.kx;
     ck.stickPivot.rotation.z = -sm.x*CK.stick.kz;
@@ -2817,7 +2857,7 @@ const AsteroidRun = (()=>{
     const glitch = now < glitchUntil;
     if(ck.frame%2 === 0 || glitch) drawMeter(false, glitch);
     if(ck.frame%4 === 0 || glitch) drawRadar(glitch);
-    updateHolos(now, glitch);
+    updateHolos(now, glitch, lockTgt);
   }
   // 操縦席の不透明部品のマスク(視界・占有率・操縦桿の見かけ位置の計測用 / SPEC-13 K1)
   function cockpitMask(fov = 72, w = 1024, h = 576){
@@ -2846,6 +2886,32 @@ const AsteroidRun = (()=>{
     C.position.copy(keepCam[0]); C.quaternion.copy(keepCam[1]); C.fov = keepCam[2];
     resize();
     return {coverPct: +(on/n*100).toFixed(2), centerPx: cen, stickNdcX: +tp.x.toFixed(3)};
+  }
+  // ロック札とレティクル枠の NDC(カメラ座標から投影。レティクルはカメラと同じ座標系)
+  function lockTagInfo(){
+    const tag = ck.lockTag, P = C.projectionMatrix;
+    const ndc = (x, y, z)=>new THREE.Vector3(x, y, z).applyMatrix4(P);
+    const tp = tag.mesh.position, hw = .37/2*HOLO_SCALE, hh = .09/2*HOLO_SCALE;
+    const a = ndc(tp.x - hw, tp.y - hh, tp.z), b = ndc(tp.x + hw, tp.y + hh, tp.z), c = ndc(tp.x, tp.y, tp.z);
+    const rp = ret.position, r = .17*ret.scale.x;
+    const ra = ndc(rp.x - r, rp.y - r, rp.z), rb = ndc(rp.x + r, rp.y + r, rp.z), rc = ndc(rp.x, rp.y, rp.z);
+    return {visible: tag.mesh.visible && cockpit.visible, ndc: [c.x, c.y], retNdc: [rc.x, rc.y], ttc: ck.lockTTC,
+      text: tag.texts.join(' '), rect: [a.x, a.y, b.x, b.y], retRect: [ra.x, ra.y, rb.x, rb.y]};
+  }
+  // 文字の画面上の実寸(px): フォント/キャンバス高 × 板の高さ × 倍率 × (画面高/2) / (奥行き × tan(FOV/2))
+  function textPx(vw, vh, touch = IS_TOUCH){
+    const tn = Math.tan(THREE.MathUtils.degToRad(36)), v = new THREE.Vector3(), sc = new THREE.Vector3();
+    C.updateMatrixWorld(true);
+    const px = (mesh, ch, font, ratio)=>{
+      mesh.getWorldPosition(v); C.worldToLocal(v); mesh.getWorldScale(sc);
+      return font/ch*mesh.geometry.parameters.height*sc.y*ratio*(vh/2)/(-v.z*tn);
+    };
+    const H = ck.holos, hr = (touch ? 1.25 : 1)/HOLO_SCALE, mr = (touch ? .9 : .8)/CK.meter.scale;
+    const r1 = n=>+n.toFixed(1);
+    return {speed: r1(px(ck.meterMesh, 300, 58, mr)),
+      score: r1(px(H.top.mesh, 108, 42, hr)), cores: r1(px(H.arm.mesh, 300, 34, hr)),
+      labelsMin: r1(Math.min(px(ck.meterMesh, 300, 30, mr), px(H.shield.mesh, 300, 26, hr), px(H.arm.mesh, 300, 26, hr),
+        px(H.top.mesh, 108, 32, hr), px(ck.lockTag.mesh, 64, 38, hr)))};
   }
   // 操縦席の部品の画面上の矩形(CSS px・FOV72°・正面向き)
   function projRect(mesh, vw, vh){
@@ -3234,7 +3300,8 @@ const AsteroidRun = (()=>{
     st = {dist:0, cores:2, shields:3, speed:110, inv:0,   // 初期コア2個(機関砲の試射用)
       // SPEC-09e: 積み上げ点・コンボ・ヒットストップ・FOVキック・内訳
       score:0, combo:0, comboT:0, mult:1, maxCombo:0, hitStop:0, fovKick:0, nmFlash:0, hullGlow:0,
-      tally:{near:{n:0, pts:0}, kill:{n:0, pts:0}, core:{n:0}}};
+      tally:{near:{n:0, pts:0}, kill:{n:0, pts:0}, core:{n:0}},
+      bootT: (ck && ck.reduced !== null ? ck.reduced : REDUCED) ? 9 : 0};   // SPEC-13 K-12: 起動演出の経過(実時間)
     document.getElementById('g-pop').innerHTML = '';
     if(shipFx){ shipFx.hull.emissive.setHex(0); shipFx.hull.emissiveIntensity = 1; }   // 被弾の点灯中に終了した場合の持ち越しを消す
     shake = 0;
@@ -3334,6 +3401,7 @@ const AsteroidRun = (()=>{
     Quality.frame(rawMs);   // SPEC-06 PRF: フレーム時間監視
     // SPEC-09e: ヒットストップ中は世界の時間(simDt)だけ止める。描画・揺れ・入力は実時間(dt)で続ける
     const simDt = st.hitStop > 0 ? 0 : dt;
+    st.bootT += dt;   // SPEC-13: 起動演出は実時間で進む(ヒットストップの影響を受けない)
     if(st.hitStop > 0) st.hitStop = Math.max(0, st.hitStop - dt);
     stepCombo(simDt);
 
@@ -3374,7 +3442,6 @@ const AsteroidRun = (()=>{
       C.lookAt(ship.position.x + sm.x*6, ship.position.y + .35 - sm.y*5, -160);
       C.rotateZ(sm.roll);
       C.rotateX(sm.pitch);
-      updateCockpit(dt, now);   // SPEC-13: 操縦桿の傾き・トリガー・計器
 
       // レティクル: ロック対象に吸い付き、見かけサイズに合わせて拡縮。非ロック時は定位置の飾りへ
       let rx = sm.x*.42, ry = -.65 - sm.y*.3, rs = 1;
@@ -3391,6 +3458,7 @@ const AsteroidRun = (()=>{
       ret.position.x += (rx - ret.position.x)*Math.min(1, dt*12);
       ret.position.y += (ry - ret.position.y)*Math.min(1, dt*12);
       ret.scale.setScalar(ret.scale.x + (rs - ret.scale.x)*Math.min(1, dt*10));
+      updateCockpit(dt, now, lockTgt);   // SPEC-13: 操縦桿・計器・ホログラム・ロック札(レティクルの位置確定後)
     }
     if(shake > 0){
       C.position.x += (Math.random()-.5)*shake*.9;
@@ -3800,7 +3868,13 @@ const AsteroidRun = (()=>{
         keys: ()=>({shield: ck.holos.shield.lastKey, arm: ck.holos.arm.lastKey, top: ck.holos.top.lastKey, meter: ck.keys.meter}),
         redrawAll: ()=>{ for(const hp of ck.holoList) hp.redraw(true); drawMeter(true); },
         stateColor: ()=>STATE_COL[stateIdx()], glowState: ()=>ck.state, setReduced: v=>{ ck.reduced = v; },
-        meterRect: (vw, vh)=>projRect(ck.meterMesh, vw, vh),
+        meterRect: (vw, vh, touch = IS_TOUCH)=>{   // touch: SPの倍率で測る
+          const g = ck.meterMesh.parent, k0 = g.scale.x, x0 = g.position.x;
+          g.scale.setScalar(touch ? .9 : .8); g.position.x = touch ? -.39 : -.44;
+          try{ return projRect(ck.meterMesh, vw, vh); }finally{ g.scale.setScalar(k0); g.position.x = x0; } },
+        lockTag: ()=>lockTagInfo(), boot: ()=>({t: st.bootT, meterShown: meterSpeed(),
+          shown: {strip: bootP('strip'), meter: bootP('meter'), shield: bootP('shield'), arm: bootP('arm'), top: bootP('top'), radar: bootP('radar'), online: ck.online.mesh.visible}}),
+        textPx,
         tris: ()=>{ let n = 0; cockpit.traverse(o=>{ if(o.isMesh){ const g = o.geometry; n += (g.index ? g.index.count : g.attributes.position.count)/3; } }); return Math.round(n); },
       } : null,
       collide: (now, measureOnly)=>{

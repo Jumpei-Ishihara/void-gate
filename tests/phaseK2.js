@@ -15,7 +15,7 @@
   const D = V.AsteroidRun.debug(), ck = D.ck, st = D.stRef;
   t('H-02 起動(操縦席視点)', D.playing && ck && ck.holos, 'holos=' + !!(ck && ck.holos));
   if(!ck || !ck.holos){ V.AsteroidRun.stop(); V.closeLayer(); window.__PK2RESULTS = R; console.table(R); return R; }
-  st.inv = 1e15;
+  st.inv = 1e15; st.bootT = 9;   // SPEC-13 K3 の起動演出は済ませた状態で検証する
   const T = V.THREE, H = ck.holos, names = ['shield', 'arm', 'top', 'alert', 'edge'];
 
   // K2-T01: 5パネル・加算・深度書き込みなし・レティクルと別の材質

@@ -17,6 +17,7 @@
   t('H-02 起動(操縦席視点)', D.playing && !!ck, 'ck=' + !!ck);
   if(!ck){ V.AsteroidRun.stop(); V.closeLayer(); window.__PK1RESULTS = R; console.table(R); return R; }
   D.stRef.inv = 1e15;   // 被弾で止まらないように
+  D.stRef.bootT = 9;    // SPEC-13 K3 の起動演出は済ませた状態で検証する
 
   // K1-T01: 部品の存在と旧部品の不在
   const P = ck.parts, need = ['dash', 'bow', 'glass', 'stickPivot', 'trigger', 'meter', 'radar'];
