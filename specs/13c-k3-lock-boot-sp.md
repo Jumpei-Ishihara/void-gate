@@ -1,0 +1,90 @@
+# SPEC 13c — K3: ロック札・起動演出・スマホ調整・文書
+
+状態: **Draft** ／ 親: [SPEC-13](13-cockpit-holo.md) ／ 前提: K2（[13b](13b-k2-holograms.md)）Verified ／ テスト: `tests/phaseK3.js`
+
+## 1. 範囲
+
+- ロック札（K-10）・起動演出（K-12）・SP の倍率と配置・文字の実寸・文書の更新
+- 対象要件: K-R09 / K-R10 / K-R11 / K-R12 / K-R15（SP）/ K-R16
+
+## 2. ロック札（K-10）
+
+- `holoPanel` 1 枚: .36×.09・キャンバス 256×64・フォント 38px（`LOCK` は状態色、`T-n.n` は白）
+- 表示条件: 操縦席視点 かつ `lockMode` かつ ループ内の `lockTgt` がある かつ 起動演出の武装パネル表示後（`bootT ≥ .45`）
+- 位置: レティクルの現在位置 `ret.position`（z=-3 面・平滑化済み）と拡縮 `rs = ret.scale.x` から、枠の右上外側へ
+  ```js
+  const k = 2.3/3;   // z=-3 → z=-2.3 面へ
+  tag.position.set((ret.position.x + rs*.17 + .27)*k, (ret.position.y + rs*.17 + .02)*k, -2.3);
+  ```
+  （`.27` は札の半幅 .18 を z=-3 面に換算した .235 ＋ 余白 .035。札の左端が枠の右端より外に出るので重ならない）
+- 値: `ttc = (ship.position.z - lockTgt.position.z)/st.speed`（秒）。表示は `T-` ＋ 小数 1 桁。キー `ttc.toFixed(1)|state`
+- **レティクルは一切変更しない**（位置・拡縮は既存のロック追従をそのまま読むだけ）
+
+## 3. 起動演出（K-12）
+
+- 状態: `st.bootT`（`start()` で 0。`REDUCED` なら 1.5。**実時間 `dt` で進める**＝ヒットストップの影響を受けない）
+- 各パネルの `bootAt`: 発光線 0 / メーター .15 / シールド .30 / 武装 .45 / 上帯 .60 / レーダー .75
+- パネルの表示: `p = clamp((bootT - bootAt)/.2, 0, 1)`。`p < 1` の間は毎フレーム描き直し、上から `p×高さ` の範囲だけを描く（走査線の描き出し）。`opacity = p`
+- 発光線: `bootT < .3` の間、中央から左右へ点灯（トーラスの `drawRange` を `p` で広げる）
+- メーターの振れ: `.15 ≤ bootT < .9` の間、表示用の速度を
+  `.15〜.5: 0 → SPD_MAX`（ease-out）、`.5〜.9: SPD_MAX → st.speed`（ease-in-out）。`bootT ≥ .9` で実速度
+- `SYSTEMS ONLINE`: 警告文字のパネルとは別の `holoPanel`（1.6×.2・800×100・状態色 40px）を `.9〜1.5` で表示し、最後の .2 秒で消える
+- **ゲームは止めない**: 演出はループの描画側だけ。`st.dist`・当たり判定・入力は通常どおり進む
+- 視点: 追跡視点で開始 → 操縦席へ切替時は `bootT` が既に進んでいるため演出なしで表示。プレイ中の切替でも再生しない
+- 音: 追加しない（既存の `engineStart`）
+
+## 4. スマホ（SP）
+
+| 項目 | 値 |
+|---|---|
+| ホログラム倍率 `HOLO_SCALE` | 1.25（シールド・武装・上帯・警告・ロック札の `scale`） |
+| メーター倍率 | 1.3（13a の `CK.meter.scale`） |
+| キャンバス解像度 | ×0.6（`CANVAS_Q`） |
+| FIRE ボタン（左 20px・下 32px・92px 角）とメーター | 交差しない（試算: 667×375 でメーターは x 130〜304px） |
+| 左上 | ♪ ボタンのみ（数値行は K2 で非表示） |
+
+## 5. 文字の実寸（K-R11）
+
+`px = fontPx / canvasH × worldH × scale × (viewportH/2) / (dist × tan(fov/2))`（dist はカメラからパネル中心まで。FOV 72°）
+
+| 区分 | 対象 | PC 1280×720 | SP 667×375 | 試算（PC / SP） |
+|---|---|---|---|---|
+| 主要数値 | 速度 | ≥ 18px | ≥ 10px | 23.0 / 15.6 |
+| 数値 | スコア・残コア | ≥ 14px | ≥ 9px | 14.9 / 9.7・14.3 / 9.3 |
+| ラベル | km/s・THR・SHIELD・CORE・セクター名・LOCK | ≥ 10px | ≥ 7px | 10.3 / 7.0・10.9 / 7.1・12.4 / 8.1・10.7 / 7.3 |
+
+デバッグ `ck.textPx(viewW, viewH)` が、各パネルの `fonts` とワールド行列から上式で算出して返す。
+
+## 6. 文書
+
+- README: テスト数・スイート数、SPEC-13 の行、操縦席視点の説明（計器とホログラム）
+- DESIGN.md: 操縦席の章を SPEC-13 の構成に更新
+- SPEC-00 の一覧・SPEC-13 と 13a〜13c の状態を Verified に
+
+## 7. デバッグ API（追加）
+
+```js
+lockTag: ()=>({visible, ndc: [x, y], retNdc: [x, y], ttc, text}),
+boot: ()=>({t: st.bootT, shown: {strip, meter, shield, arm, top, radar, online}, meterShown}),
+textPx: (vw, vh)=>({speed, score, cores, labelsMin}),
+fireRect: ()=>DOMRect | null, meterRect: (vw, vh)=>{x0, y0, x1, y1},
+```
+
+## 8. 受け入れテスト（tests/phaseK3.js）
+
+| ID | 手順 | 合格条件 |
+|---|---|---|
+| K3-T01 | 正面 z-150 に岩 1 個・LOCK AUTO で 40 フレーム | 札が visible、`ndc` が `retNdc` の右上（dx > 0・dy ≥ 0）、札と枠の矩形が交差しない |
+| K3-T02 | 同条件で `ttc` | `(ship.z - rock.z)/speed` と ±.1 秒 |
+| K3-T03 | 岩を横へ外す / LOCK OFF / 追跡視点 | いずれも札が非表示 |
+| K3-T04 | `start()` 直後から `tick` で 0.5 秒 → 1.2 秒 → 1.6 秒 | 0.5 秒: メーター・シールド表示、上帯・レーダー未表示、`meterShown` が SPD_MAX 付近 ／ 1.2 秒: 全パネル表示 ／ 1.6 秒: `SYSTEMS ONLINE` 非表示 ／ 0.5 秒時点で `st.dist > 0` |
+| K3-T05 | `REDUCED` 擬似 true で `start()` | 1 フレーム目から全パネル表示・`SYSTEMS ONLINE` なし |
+| K3-T06 | `textPx(1280, 720)` と `textPx(667, 375)`（SP 倍率を適用した状態） | §5 の下限をすべて満たす |
+| K3-T07 | SP ビューポート（667×375）で `fireRect` と `meterRect` | 交差しない（SP でない環境では FIRE ボタンを擬似表示して測る） |
+| K3-T08 | 起動演出中 60 フレームの再描画回数 → 演出後 60 フレーム | 演出後は K2-T07 と同じ（変化時のみ） |
+
+## 9. 完了の定義（SPEC-13 全体）
+
+- phaseK1〜K3 と既存スイートの全グリーン（`run-all.js` に K1〜K3 を追加）
+- PC / SP（横画面）で通常・危険・ロック・起動演出の画像を確認
+- 本番（GitHub Pages）で起動・コンソールエラーなし
