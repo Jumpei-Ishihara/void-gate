@@ -70,7 +70,15 @@
     const rp = D2.composer.passes[0], scn = rp.scene, cam = rp.camera, RD2 = D2.composer.renderer;
     const rocks = scn.children.filter(o=>o.isMesh && o.userData.isRock);   // SPEC-09b改訂: bumpMap(F4で廃止)ではなく識別子で抽出
     const gl = RD2.getContext();
-    const sample = ()=>{ RD2.render(scn, cam);
+    // 決定論化: 前スイートやブラウザ上の実マウスで機体/視線がずれていても、岩が画面中央の採取域に入るよう
+    // 入力を中央に固定し、カメラを機体基準で正面に向け、岩も機体基準で置く
+    V.AsteroidRun.input(innerWidth/2, innerHeight/2);
+    const sp0 = D2.shipObj.position.clone();
+    const camPos = cam.position.clone(), camQuat = cam.quaternion.clone();
+    cam.position.set(sp0.x, sp0.y + .55, sp0.z + 1.35);
+    cam.lookAt(sp0.x, sp0.y + .35, sp0.z - 160);
+    cam.updateMatrixWorld();
+    const sample = ()=>{ RD2.setRenderTarget(null); RD2.render(scn, cam);
       const w = RD2.domElement.width, h = RD2.domElement.height, bw = 160, bh = 120;
       const buf = new Uint8Array(bw*bh*4);
       gl.readPixels((w-bw)>>1, (h-bh)>>1, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
@@ -80,12 +88,13 @@
     rocks[0].visible = true;   // SPEC-09c改訂: プールの岩は未使用時に非表示のため、借りる岩を表示する
     const gainAt = z=>{
       rocks.forEach((m, i)=>m.position.set(0, 0, -1500 - i*10));
-      rocks[0].position.set(0, 0, z); rocks[0].scale.setScalar(z < -150 ? 24 : 5);
+      rocks[0].position.set(sp0.x, sp0.y + .35, sp0.z + z); rocks[0].scale.setScalar(z < -150 ? 24 : 5);
       const on = sample(); const k = hl.intensity; hl.intensity = 0;
       const off = sample(); hl.intensity = k;
       return on - off; };
     const gNear = gainAt(-30), gFar = gainAt(-300);
     rocks.forEach((m, i)=>{ m.position.copy(keep[i]); m.scale.setScalar(m.userData.r); m.visible = keepVis[i]; });
+    cam.position.copy(camPos); cam.quaternion.copy(camQuat); cam.updateMatrixWorld();
     t('LIGHT-02 近距離が明るくなる', gNear > 8, `gain(近)=${gNear.toFixed(1)}`);
     t('LIGHT-03 遠距離は変化なし', Math.abs(gFar) < 2 && gNear > gFar*3 + 5,
       `gain(遠)=${gFar.toFixed(1)}`);

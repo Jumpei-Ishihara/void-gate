@@ -2485,6 +2485,97 @@ const AsteroidRun = (()=>{
     c.shadowColor = col; c.shadowBlur = blur; c.fillStyle = col; c.fillText(txt, x, y);
     c.shadowBlur = 0; c.fillStyle = '#fff'; c.globalAlpha = .55; c.fillText(txt, x, y); c.globalAlpha = 1;
   }
+  /* --- パイロットの手(SPEC-14): 右手のフライトグローブが中央の操縦桿を握る --- */
+  // grp: 操縦桿のグリップ座標(軸 = y・前 = -z)。prof: グリップの輪郭 [半径, 高さ]
+  function buildGlove(grp, prof, mGlow){
+    const V3 = (x, y, z)=>new THREE.Vector3(x, y, z);
+    const gripR = y=>{   // 高さ y でのグリップの半径(輪郭を線形補間)
+      for(let i = 1; i < prof.length; i++){ const a = prof[i - 1], b = prof[i];
+        if(y >= a.y && y <= b.y) return a.x + (b.x - a.x)*(y - a.y)/Math.max(1e-6, b.y - a.y); }
+      return 0;
+    };
+    const capsule = (a, b, r)=>{   // a→b を結ぶカプセル
+      const d = new THREE.Vector3().subVectors(b, a), L = d.length();
+      const g = new THREE.CapsuleGeometry(r, Math.max(1e-4, L), 3, 8);
+      g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(V3(0, 1, 0), d.normalize()));
+      const m = a.clone().add(b).multiplyScalar(.5); g.translate(m.x, m.y, m.z);
+      return g;
+    };
+    const frustum = (a, b, ra, rb, seg = 18)=>{   // a(半径ra)→b(半径rb)の円錐台
+      const d = new THREE.Vector3().subVectors(b, a), L = d.length();
+      const g = new THREE.CylinderGeometry(rb, ra, L, seg, 1, false);
+      g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(V3(0, 1, 0), d.normalize()));
+      const m = a.clone().add(b).multiplyScalar(.5); g.translate(m.x, m.y, m.z);
+      return g;
+    };
+    // 指: グリップの周り(輪郭+指の太さ)を右側(φ=0)から前(-z)を回って左へ巻く
+    const around = (y, deg, r)=>{ const R = gripR(y) + r + .002, f = deg*Math.PI/180;
+      return V3(Math.cos(f)*R, y, -Math.sin(f)*R*1.25); };
+    const FINGERS = [   // [付け根の高さ, 太さ, 各関節の角度(度)]。拳はグリップの右前(φ=20°)、指は前を回って左へ
+      {y: .318, r: .015, deg: [20, 62, 95]},          // 人差し指(トリガーで止まる)
+      {y: .286, r: .0155, deg: [20, 70, 125, 172]},
+      {y: .254, r: .0148, deg: [20, 70, 122, 165]},
+      {y: .224, r: .0135, deg: [20, 68, 115, 155]},
+    ];
+    const joints = [], gloveG = [], indexG = [];
+    FINGERS.forEach((f, fi)=>{
+      const pts = f.deg.map((d, k)=>around(f.y - k*.003, d, f.r));
+      joints.push(...pts);
+      for(let k = 1; k < pts.length; k++) (fi === 0 ? indexG : gloveG).push({g: capsule(pts[k - 1], pts[k], f.r*(1 - k*.06))});
+    });
+    // 人差し指は付け根を支点に動かす(トリガーを引く)
+    const idxPivot = new THREE.Group(), kn = around(FINGERS[0].y, FINGERS[0].deg[0], FINGERS[0].r);
+    idxPivot.position.copy(kn);
+    indexG.forEach(p=>p.g.translate(-kn.x, -kn.y, -kn.z));
+    // 手の甲: 拳(グリップの右前)から手首(右後ろ)へ延びる板状の楕円体。広い面がパイロット側を向く
+    const HAND_YAW = -.59, hc = V3(.105, .27, .03);
+    const back = new THREE.SphereGeometry(1, 18, 12); back.scale(.07, .064, .03); back.rotateY(HAND_YAW); back.translate(hc.x, hc.y, hc.z);
+    gloveG.push({g: back});
+    // 拳の関節の膨らみ(手として読めるように)
+    FINGERS.forEach(f=>{ const b = new THREE.SphereGeometry(f.r*1.2, 10, 8), q = around(f.y, 14, f.r + .006); b.translate(q.x, q.y, q.z); gloveG.push({g: b}); });
+    // 親指: 手の甲の上から操縦桿の頭の上へ斜めに寝かせる(ハットスイッチの右横)
+    const th = [V3(.075, .318, .048), V3(.048, .354, .036), V3(.022, .386, .012)];
+    gloveG.push({g: capsule(th[0], th[1], .0165)}, {g: capsule(th[1], th[2], .0148)});
+    const wA = V3(.16, .255, .07), wB = V3(.2, .195, .12);   // 手首 → 袖口
+    gloveG.push({g: frustum(wA, wB, .045, .05)});
+    // 装甲: 拳のガード + 手の甲の板(手の甲の面に沿わせる)
+    const nrm = V3(Math.sin(HAND_YAW), 0, Math.cos(HAND_YAW));   // 手の甲の面の向き(パイロット側)
+    const plate = new THREE.BoxGeometry(.075, .075, .01); plate.rotateY(HAND_YAW);
+    const pc = hc.clone().addScaledVector(nrm, .028); plate.translate(pc.x, pc.y, pc.z);
+    const kk = y=>around(y, 16, .032);   // 拳の外側
+    const armorG = [{g: capsule(kk(.222), kk(.322), .014)}, {g: plate}];
+    // 袖口の発光線(状態色) と 飛行服の袖(右下の画面外へ)
+    const cuffMid = wA.clone().lerp(wB, .55), axis = new THREE.Vector3().subVectors(wB, wA).normalize();
+    const ringG = new THREE.TorusGeometry(.049, .004, 5, 24);
+    ringG.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(V3(0, 0, 1), axis)); ringG.translate(cuffMid.x, cuffMid.y, cuffMid.z);
+    const sleeveG = frustum(wB, V3(.42, -.1, .38), .06, .075, 20);
+
+    const std = o=>new THREE.MeshStandardMaterial(o);
+    const mats = {glove: std({color:0x3d3833, roughness:.55, metalness:.12, envMapIntensity:.8}),   // 暖色の合成皮革(青灰色のグリップと区別)
+      armor: std({color:0x5c6673, roughness:.32, metalness:.72, envMapIntensity:1.1}),
+      sleeve: std({color:0x1b2230, roughness:.88, metalness:0, envMapIntensity:.3})};
+    const group = new THREE.Group();
+    const glove = new THREE.Mesh(Assets.mergeGeo(gloveG), mats.glove);
+    const index = new THREE.Mesh(Assets.mergeGeo(indexG), mats.glove);
+    const armor = new THREE.Mesh(Assets.mergeGeo(armorG), mats.armor);
+    const cuffGlow = new THREE.Mesh(ringG, mGlow);
+    const sleeve = new THREE.Mesh(sleeveG, mats.sleeve);
+    idxPivot.add(index);
+    group.add(glove, idxPivot, armor, cuffGlow, sleeve);
+    grp.add(group);
+    return {group, parts: {glove, index, armor, cuffGlow, sleeve}, idxPivot, idxBase: 0, joints, gripR, mats};
+  }
+  // 握りの検証(G-R02): 指の関節点とグリップ表面の距離・グローブ頂点の芯への食い込み
+  function gloveFit(h){
+    const rho = p=>Math.hypot(p.x, p.z/1.25);
+    const near = h.joints.filter(p=>rho(p) - h.gripR(p.y) <= .02).length;
+    const pos = h.parts.glove.geometry.attributes.position, v = new THREE.Vector3();
+    let inGrip = 0, n = 0;
+    for(let i = 0; i < pos.count; i++){ v.fromBufferAttribute(pos, i);
+      if(v.y < .18 || v.y > .36) continue; n++; if(rho(v) < .028) inGrip++; }
+    return {contactPct: Math.round(near/h.joints.length*100), penetratePct: +(inGrip/Math.max(1, n)*100).toFixed(1)};
+  }
+
   function buildCockpit(){
     S.add(C);
     cockpit = new THREE.Group();
@@ -2574,6 +2665,7 @@ const AsteroidRun = (()=>{
     // トリガー(発射で引かれる。回転の支点はグリップ前面)
     const trigger = new THREE.Group(); trigger.position.set(0, .325, -.04); grp.add(trigger);
     const trigM = new THREE.Mesh(new THREE.CapsuleGeometry(.007, .03, 4, 8), mMetal); trigM.position.set(0, -.015, -.004); trigger.add(trigM);
+    const hand = buildGlove(grp, prof, mGlow);   // SPEC-14: 右手が操縦桿を握る
     stickPivot.add(body);
     const stickBase = new THREE.Mesh(new THREE.CylinderGeometry(.13, .16, .03, 32), mFrame);
     stickBase.position.set(K.pos[0], K.pos[1] - .005, K.pos[2]);
@@ -2616,6 +2708,7 @@ const AsteroidRun = (()=>{
     ck = {dash: side, dashTop: top, strip, bow, glass, stickPivot, trigger, trigBase: trigger.rotation.x, triggerT: 0, tip,
       meterMesh, meterP: mp, meterState: null, radarMesh, radarP: rp, mGlow, mats: {dash: mDash, frame: mFrame, metal: mMetal},
       frame: 0, redraws: {meter: 0, radar: 0}, keys: {}, state: 0};
+    ck.hand = hand;
     buildHolos();   // SPEC-13 K2
 
     // HUDレティクル(四隅のコーナーブラケット + 中央の十字 / ごく薄い飾り、ロック時に増光)
@@ -2851,6 +2944,7 @@ const AsteroidRun = (()=>{
     ck.stickPivot.rotation.z = -sm.x*CK.stick.kz;
     if(ck.triggerT > 0) ck.triggerT = Math.max(0, ck.triggerT - dt);
     ck.trigger.rotation.x = ck.trigBase + (ck.triggerT > 0 ? .35 : 0);
+    ck.hand.idxPivot.rotation.y = ck.hand.idxBase + (ck.triggerT > 0 ? .3 : 0);   // SPEC-14: 人差し指がトリガーを引く
     const si = stateIdx();
     if(si !== ck.state){ ck.state = si; ck.mGlow.color.set(STATE_COL[si]).multiplyScalar(CK.glowK); }
     ck.frame++;
@@ -3863,7 +3957,9 @@ const AsteroidRun = (()=>{
         legacy: {lever: false, panels: 0},   // 旧スロットルレバー・計器3面は撤去済み
         stick: ()=>({x: ck.stickPivot.rotation.x, z: ck.stickPivot.rotation.z, trig: ck.trigger.rotation.x}),
         meter: ()=>ck.meterState, drawMeter: f=>drawMeter(f), mask: cockpitMask, materials: ck.mats, redraws: ck.redraws,
-        hwMeshes: ()=>{ let n = 0; cockpit.traverse(o=>{ if(o.isMesh && !(ck.holoG && isIn(o, ck.holoG))) n++; }); return n; },
+        hwMeshes: ()=>{ let n = 0; cockpit.traverse(o=>{ if(o.isMesh && !(ck.holoG && isIn(o, ck.holoG)) && !isIn(o, ck.hand.group)) n++; }); return n; },   // 手(SPEC-14)は別枠
+        hand: {group: ck.hand.group, parts: ck.hand.parts, materials: ck.hand.mats, fit: ()=>gloveFit(ck.hand), indexCurl: ()=>ck.hand.idxPivot.rotation.y},
+        glowMat: ck.mGlow,
         holos: ck.holos, texts: ()=>({shield: ck.holos.shield.texts, arm: ck.holos.arm.texts, top: ck.holos.top.texts}),
         keys: ()=>({shield: ck.holos.shield.lastKey, arm: ck.holos.arm.lastKey, top: ck.holos.top.lastKey, meter: ck.keys.meter}),
         redrawAll: ()=>{ for(const hp of ck.holoList) hp.redraw(true); drawMeter(true); },
@@ -3875,7 +3971,7 @@ const AsteroidRun = (()=>{
         lockTag: ()=>lockTagInfo(), boot: ()=>({t: st.bootT, meterShown: meterSpeed(),
           shown: {strip: bootP('strip'), meter: bootP('meter'), shield: bootP('shield'), arm: bootP('arm'), top: bootP('top'), radar: bootP('radar'), online: ck.online.mesh.visible}}),
         textPx,
-        tris: ()=>{ let n = 0; cockpit.traverse(o=>{ if(o.isMesh){ const g = o.geometry; n += (g.index ? g.index.count : g.attributes.position.count)/3; } }); return Math.round(n); },
+        tris: ()=>{ let n = 0; cockpit.traverse(o=>{ if(o.isMesh && !isIn(o, ck.hand.group)){   /* 手(SPEC-14)は別枠 */ const g = o.geometry; n += (g.index ? g.index.count : g.attributes.position.count)/3; } }); return Math.round(n); },
       } : null,
       collide: (now, measureOnly)=>{
         if(!measureOnly) return collide(now, 0);
