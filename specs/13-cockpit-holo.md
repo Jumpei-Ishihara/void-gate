@@ -1,7 +1,7 @@
 # SPEC 13 — 操縦席の刷新（HOLO CANOPY ＋ 中央操縦桿）
 
 状態: **Verified（2026-09-26 K1〜K3 全て Verified・run-all 24スイート365テスト ALL GREEN）** ／ 詳細設計: [13a K1](13a-k1-cockpit-hardware.md)・[13b K2](13b-k2-holograms.md)・[13c K3](13c-k3-lock-boot-sp.md) ／ [実装計画](13-implementation-plan.md) ／ 依頼: 「推奨方針でデザイン設計を作成」 ／ 前提: [SPEC-12](12-cockpit-concepts.md) 案A改（中央操縦桿）・SPEC-09〜11 Verified ／ 外部素材: 不要
-確認用: [labs/cockpit-concepts.html](../labs/cockpit-concepts.html)「案A改 中央操縦桿」 ／ 画像: `labs/cockpit-shots/A2-center-*.jpg`
+確認用: [labs/cockpit-concepts.html](../labs/cockpit-concepts.html)「案A改 中央操縦桿」 ／ 画像: 案 `labs/cockpit-shots/A2-center-*.jpg`・実装前 `cockpit-0-current.jpg`・実装後 `final-pc-{lock,caution,critical,boot}.jpg`・`final-sp-lock.jpg`
 
 ## 1. 目的と範囲
 

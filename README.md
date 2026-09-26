@@ -23,8 +23,6 @@ WEAPONS(着弾閃光で凍結→機関砲説明) → SURVIVAL(激突の瞬間で
 
 ### ASTEROID RUN（EXPLORE // 探査開始）
 
-> ※かつて併設していた交信ゲーム SIGNAL TUNER は SPEC-08 で撤去済み
-
 小惑星帯を回避飛行しながらエネルギーコア ◆ を回収する3D飛行ゲーム。
 
 - シールドは3枚。**4発目の被弾で機体大破**（シールド0のCRITICAL中は赤色非常灯が明滅）
@@ -79,22 +77,29 @@ python3 -m http.server 8000
 | ファイル | 内容 |
 |---|---|
 | [DESIGN.md](DESIGN.md) | デザイン仕様書（ビジュアル・インタラクション・ゲーム設計・SP対応） |
-| [QUALITY_PLAN.md](QUALITY_PLAN.md) | 素材クオリティ向上の方針書（Phase 1〜4、全実装済み） |
-| [specs/](specs/00-overview.md) | SDD詳細設計書 SPEC 00〜09（要件ID・受け入れ基準つき） |
+| [QUALITY_PLAN.md](QUALITY_PLAN.md) | 最初の方針書（素材クオリティ向上 Phase 1〜4・完了。履歴） |
+| [specs/](specs/00-overview.md) | SDD詳細設計書 SPEC 00〜16（要件ID・受け入れ基準つき）。全SPECの一覧と状態・資料の管理ルールは 00-overview |
 | [specs/09](specs/09-realism-gameplay-policy.md) | リアル質感×ゲーム品質向上: 方針書・詳細設計 09a〜09g・[実装計画](specs/09-implementation-plan.md)（F1〜F7 全て Verified） |
 | [specs/10](specs/10-ship-redesign.md) | 機体デザイン刷新（一体成形のステルス迎撃機）— Verified |
 | [specs/11](specs/11-audio-timing.md) | 効果音のタイミング調整（計測と対策）— Verified |
 | [specs/12](specs/12-cockpit-concepts.md) / [13](specs/13-cockpit-holo.md) | 操縦席の刷新: 3案の検討と参考調査 → HOLO CANOPY＋中央操縦桿（[実装計画](specs/13-implementation-plan.md)・K1〜K3 Verified）。案の比較は `labs/cockpit-concepts.html` |
 | [labs/before-after.html](labs/before-after.html) | SPEC-09 の before / after 比較（着手前のコードと本番コードを同じ配置・カメラで左右比較）。提案時のルックデブは `labs/lookdev.html` |
-| [HANDOFF.md](HANDOFF.md) | オフライン化完了報告（2026-06-12時点のスナップショット） |
 
 ## テスト
 
-`tests/phase1〜4.js`(ゲーム) + `tests/phaseA〜D・E1〜E3.js`(サイト) + `tests/phaseSEO.js` + `tests/phaseF1〜F7.js`(SPEC-09) + `tests/phaseS1.js`(SPEC-10 機体) + `tests/phaseAU.js`(SPEC-11 効果音) + `tests/phaseK1〜K3.js`(SPEC-13 操縦席) に受け入れテスト計365項目（24スイート）。一括実行中は消音されます。`tests/run-all.js` で一括実行できます:
+`tests/phase1〜4.js`(ゲーム) + `tests/phaseA〜D・E1〜E3.js`(サイト) + `tests/phaseSEO.js` + `tests/phaseF1〜F7.js`(SPEC-09) + `tests/phaseS1.js`(SPEC-10 機体) + `tests/phaseAU.js`(SPEC-11 効果音) + `tests/phaseK1〜K3.js`(SPEC-13 操縦席) に受け入れテスト計366項目（24スイート）。一括実行中は消音されます。`tests/run-all.js` で一括実行できます:
 
 ```js
 fetch('tests/run-all.js').then(r=>r.text()).then(eval);   // 結果は window.__ALLRESULTS
 ```
+
+## 開発メモ
+
+- **オフライン**: Three.js 本体とアドオンは `libs/`、フォントは `fonts/` に同梱し、実行時の外部リクエストはゼロ
+- **文言を追加したとき**: Noto Sans JP は使用文字だけのサブセット。新しい漢字を使うとシステムフォントで描画されるため、
+  必要なら google/fonts の `NotoSansJP[wght].ttf` から `pyftsubset --text-file=使用文字 --flavor=woff2` で作り直す
+  （`▸` は Noto 非収録のため常にシステムフォント）
+- **資料の更新ルール**: README・DESIGN.md は現在の姿のみ、specs は決定の記録（[SPEC-00 §0.1](specs/00-overview.md)）
 
 ## 使用技術・ライセンス
 

@@ -111,6 +111,13 @@
   const olds = ['速度は時間とともに上昇', '航行距離×10＋残コア×500', 'スコア＝航行距離×10＋残コア'];
   const found = olds.filter(o=>html.includes(o) || readme.includes(o) || design.includes(o));
   t('F7-T10 旧仕様の文言なし', found.length === 0, found.join(' / '));
+  // F7-T12(SPEC-16): 資料と実装の整合 — FIREボタンの位置(実装は左下)と、撤去した機能の記述が現行資料に残っていない
+  const fb = document.getElementById('fire-btn'), fcs = fb ? getComputedStyle(fb) : null;
+  const fireLeft = fcs && parseFloat(fcs.left) < innerWidth/2;
+  const wrongPos = [html, readme, design].some(x=>x.includes('右下のFIREボタン') || x.includes('右下サムゾーン'));
+  const retired = ['SIGNAL TUNER', '両ゲーム', 'TUNE IN'].filter(o=>readme.includes(o) || design.includes(o));
+  t('F7-T12 資料と実装の整合(FIREボタンは左下・撤去機能の記述なし)', fireLeft && !wrongPos && retired.length === 0,
+    `左配置=${fireLeft} 右下表記=${wrongPos} 撤去機能=[${retired}]`);
   // F7-T11: JSON-LD
   const ld = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m=>m[1]).join('');
   t('F7-T11 JSON-LD(VideoGame)にセクター制とスコア体系', /セクター/.test(ld) && /ニアミス/.test(ld) && (()=>{ try{ JSON.parse(ld); return true; }catch(e){ return false; } })());

@@ -1,6 +1,6 @@
 # SPEC 08-D — デザイン検討書（連続アクションシークエンス）
 
-状態: **Draft** ／ 親: [SPEC-08](08-action-sequence.md) ／ 実装詳細: 08a/08b/08c
+状態: **Decided（08a〜08c で実装・Verified）** ／ 親: [SPEC-08](08-action-sequence.md) ／ 実装詳細: 08a/08b/08c
 
 ## 1. 演出の基本文法「5拍構成」
 

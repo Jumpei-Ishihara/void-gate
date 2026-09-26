@@ -1,6 +1,6 @@
 # SPEC 08 — 連続アクションシークエンス化 ＋ SIGNAL TUNER撤去
 
-状態: **Implemented**（2026-07-20 E1〜E3完了・最終run-all 145テスト ALL GREEN。実機レビュー待ち） ／ 親: [SPEC-07](07-scroll-guide.md)系の改訂 ／ 外部素材: 不要
+状態: **Verified（詳細設計 08a〜08c すべて Verified）** ／ 当時: **Implemented**（2026-07-20 E1〜E3完了・最終run-all 145テスト ALL GREEN。実機レビュー待ち） ／ 親: [SPEC-07](07-scroll-guide.md)系の改訂 ／ 外部素材: 不要
 
 ## 1. 目的・コンセプト転換
 
