@@ -37,7 +37,7 @@ WEAPONS(着弾閃光で凍結→機関砲説明) → SURVIVAL(激突の瞬間で
 - 結果画面にスコアの内訳（到達セクター・距離・ニアミス・撃破・残コア・最大コンボ）、**称号**（CADET → PILOT → ACE → VOID RUNNER）、
   自己ベスト上位5件を表示。**SHARE** で戦績を共有（Web Share / 非対応端末はクリップボードへコピー）
 - 起動メニューで **RANDOM（通常）/ DAILY（本日のコース）** を選択。DAILYは日付から配置が決まり、同じ日なら誰でも同じコース
-- 視点は起動メニューで **COCKPIT（操縦席）/ CHASE（追跡）** を選択。操縦席はパイロットの手が握る中央の操縦桿・スピードメーター・投影レーダーと、
+- 視点は起動メニューで **COCKPIT（操縦席）/ CHASE（追跡）** を選択。操縦席は中央の操縦桿・スピードメーター・投影レーダーと、
   キャノピー面のホログラム（シールド・武装・セクター/スコア）で状態が分かる（危険時は全体が赤に・中央に警告）
 
 | 操作 | PC | スマートフォン |
@@ -85,13 +85,12 @@ python3 -m http.server 8000
 | [specs/10](specs/10-ship-redesign.md) | 機体デザイン刷新（一体成形のステルス迎撃機）— Verified |
 | [specs/11](specs/11-audio-timing.md) | 効果音のタイミング調整（計測と対策）— Verified |
 | [specs/12](specs/12-cockpit-concepts.md) / [13](specs/13-cockpit-holo.md) | 操縦席の刷新: 3案の検討と参考調査 → HOLO CANOPY＋中央操縦桿（[実装計画](specs/13-implementation-plan.md)・K1〜K3 Verified）。案の比較は `labs/cockpit-concepts.html` |
-| [specs/14](specs/14-pilot-glove.md) | パイロットの手（右手のフライトグローブ）— Verified |
 | [labs/before-after.html](labs/before-after.html) | SPEC-09 の before / after 比較（着手前のコードと本番コードを同じ配置・カメラで左右比較）。提案時のルックデブは `labs/lookdev.html` |
 | [HANDOFF.md](HANDOFF.md) | オフライン化完了報告（2026-06-12時点のスナップショット） |
 
 ## テスト
 
-`tests/phase1〜4.js`(ゲーム) + `tests/phaseA〜D・E1〜E3.js`(サイト) + `tests/phaseSEO.js` + `tests/phaseF1〜F7.js`(SPEC-09) + `tests/phaseS1.js`(SPEC-10 機体) + `tests/phaseAU.js`(SPEC-11 効果音) + `tests/phaseK1〜K3.js`(SPEC-13 操縦席) + `tests/phaseG1.js`(SPEC-14 手) に受け入れテスト計375項目（25スイート）。一括実行中は消音されます。`tests/run-all.js` で一括実行できます:
+`tests/phase1〜4.js`(ゲーム) + `tests/phaseA〜D・E1〜E3.js`(サイト) + `tests/phaseSEO.js` + `tests/phaseF1〜F7.js`(SPEC-09) + `tests/phaseS1.js`(SPEC-10 機体) + `tests/phaseAU.js`(SPEC-11 効果音) + `tests/phaseK1〜K3.js`(SPEC-13 操縦席) に受け入れテスト計365項目（24スイート）。一括実行中は消音されます。`tests/run-all.js` で一括実行できます:
 
 ```js
 fetch('tests/run-all.js').then(r=>r.text()).then(eval);   // 結果は window.__ALLRESULTS

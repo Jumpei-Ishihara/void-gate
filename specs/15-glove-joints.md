@@ -1,6 +1,6 @@
 # SPEC 15 — パイロットの手: 継ぎ目を関節に見せる工夫（検討）
 
-状態: **Proposal（案の選定待ち）** ／ 依頼: 「図形の組み合わせで作成しているが、つなぎめを関節のように見せる工夫を検討」 ／ 前提: [SPEC-14](14-pilot-glove.md) Verified
+状態: **Withdrawn（2026-09-26 手そのものを撤去したため不採用。比較ラボ `labs/glove-joints.html` は記録として残す）** ／ 依頼: 「図形の組み合わせで作成しているが、つなぎめを関節のように見せる工夫を検討」 ／ 前提: [SPEC-14](14-pilot-glove.md) Verified
 確認用ページ: [labs/glove-joints.html](../labs/glove-joints.html)（本番と同じ照明・環境反射・ACES で 4 種を切替。クローズアップ／操縦席視点） ／ 比較画像: `labs/glove-shots/glove-joints-sheet.jpg`
 
 ## 1. 現状の継ぎ目（SPEC-14）
